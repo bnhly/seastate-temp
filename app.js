@@ -164,7 +164,8 @@
     state.coastHDStarted = true;
     function apply() {
       if (window.TM_COAST_HD_ENC) {
-        var rings = D.decodeDeltaRings(window.TM_COAST_HD_ENC);
+        var rings = D.decodeDeltaRings(window.TM_COAST_HD_ENC,
+          window.TM_COAST_HD_SCALE || 100);
         window.TM_COAST_HD_ENC = null;
         state.map.setCoastHD(rings);
       }
@@ -288,6 +289,7 @@
       $("tm-hint").style.display = "";
       $("tm-hint").textContent = (err && err.message) ? err.message : "No data near that point.";
       $("tm-results").hidden = true;
+      $("tm-side-results").hidden = true;
     });
   }
 
@@ -326,6 +328,7 @@
     var sel = monthIdxList();
     var results = $("tm-results");
     results.hidden = false;
+    $("tm-side-results").hidden = false;
 
     var combined = D.combineMonths(res, sel, state.provider.thresholds);
     var lim = D.interpExceedance(state.provider.thresholds, combined.p, state.limit);
@@ -1203,8 +1206,8 @@
       }
     });
     if (window.TM_PLACES) state.map.setPlaces(window.TM_PLACES);
-    $("tm-zoom-in").addEventListener("click", function () { state.map.zoomStep(1.6); });
-    $("tm-zoom-out").addEventListener("click", function () { state.map.zoomStep(1 / 1.6); });
+    $("tm-zoom-in").addEventListener("click", function () { state.map.zoomStep(2.0); });
+    $("tm-zoom-out").addEventListener("click", function () { state.map.zoomStep(1 / 2.0); });
     $("tm-zoom-win").addEventListener("click", function () {
       state.map.setZoomWindowMode($("tm-zoom-win").getAttribute("aria-pressed") !== "true");
     });

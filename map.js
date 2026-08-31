@@ -460,10 +460,11 @@
        keep the layer sparse; the loop stops at the first un-earned rank. */
     if (this.places) {
       var plZ = Math.log(view.scale * 360 / 256) / Math.LN2 + 1.0;
+      if (plZ > 6) plZ += (plZ - 6) * 0.8;
       var plBoxes = [], pl, plX, plY, plW, plB, plHit, pj, pk;
       ctx.font = "10px system-ui, sans-serif";
       ctx.textBaseline = "middle";
-      for (pj = 0; pj < this.places.length && plBoxes.length < 110; pj++) {
+      for (pj = 0; pj < this.places.length && plBoxes.length < 130; pj++) {
         pl = this.places[pj];
         if (pl[0] > plZ) break;
         plX = lonToX(pl[2]); plY = latToY(pl[1]);
@@ -751,7 +752,7 @@
 
     el.addEventListener("wheel", function (e) {
       e.preventDefault();
-      self.zoomAt(e.offsetX, e.offsetY, Math.pow(1.0015, -e.deltaY));
+      self.zoomAt(e.offsetX, e.offsetY, Math.pow(1.0025, -e.deltaY));
     }, { passive: false });
 
     el.addEventListener("dblclick", function (e) {

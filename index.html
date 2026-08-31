@@ -71,6 +71,7 @@
   <div id="tm-banner" class="tm-banner" hidden></div>
 
   <main>
+    <div class="tm-hero">
     <section class="tm-map-card">
       <div class="tm-map-wrap">
         <canvas id="tm-map"></canvas>
@@ -113,33 +114,37 @@
       </div>
     </section>
 
-    <section class="tm-controls" aria-label="Filters">
-      <div class="tm-control-group">
-        <span class="tm-control-label">Months</span>
-        <div class="tm-months" id="tm-months"></div>
-        <div class="tm-month-presets">
-          <button type="button" id="tm-months-all">All</button>
-          <button type="button" id="tm-months-none">Clear</button>
+    <aside class="tm-side">
+      <section class="tm-controls" aria-label="Filters">
+        <div class="tm-control-group">
+          <span class="tm-control-label">Months</span>
+          <div class="tm-months" id="tm-months"></div>
+          <div class="tm-month-presets">
+            <button type="button" id="tm-months-all">All</button>
+            <button type="button" id="tm-months-none">Clear</button>
+          </div>
         </div>
+        <div class="tm-control-group tm-limit-group">
+          <label class="tm-control-label" for="tm-limit">Operational limit H<sub>s</sub> (m)</label>
+          <input type="number" id="tm-limit" min="0.25" max="15" step="0.25" value="2" inputmode="decimal">
+        </div>
+      </section>
+      <div id="tm-side-results" class="tm-side-answer" hidden>
+        <div class="tm-loc-line">
+          <div id="tm-loc"></div>
+          <div id="tm-basis" class="tm-basis"></div>
+        </div>
+        <div id="tm-context" class="tm-basis tm-context"></div>
+        <div class="tm-headline" id="tm-headline"></div>
       </div>
-      <div class="tm-control-group tm-limit-group">
-        <label class="tm-control-label" for="tm-limit">Operational limit H<sub>s</sub> (m)</label>
-        <input type="number" id="tm-limit" min="0.25" max="15" step="0.25" value="2" inputmode="decimal">
-      </div>
-    </section>
+    </aside>
+    </div>
 
     <section id="tm-results" hidden>
-      <div class="tm-loc-line">
-        <div id="tm-loc"></div>
-        <div id="tm-basis" class="tm-basis"></div>
-      </div>
-      <div id="tm-context" class="tm-basis tm-context"></div>
       <div id="tm-prevailing" class="tm-basis tm-context" hidden></div>
       <div id="tm-extremes" class="tm-basis tm-context" hidden></div>
       <div id="tm-wind" class="tm-basis tm-context" hidden></div>
       <div id="tm-daylight" class="tm-basis tm-context" hidden></div>
-
-      <div class="tm-headline" id="tm-headline"></div>
 
       <div class="tm-charts">
         <figure class="tm-fig">

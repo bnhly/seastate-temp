@@ -20,7 +20,11 @@
      ...] with coords x100): the coastline (coastline.js, TM_COAST_ENC) and the
      country borders (borders.js, TM_BORDERS_ENC). Everything downstream (map
      drawing, land mask) reads the decoded window.TM_COAST / TM_BORDERS. */
-  function decodeDeltaRings(enc) {
+  /* scale = ints per degree in the encoding; 100 for the embedded 50m
+     coastline and borders, 1000 for the finer HD coastline (which stamps
+     TM_COAST_HD_SCALE beside its data). */
+  function decodeDeltaRings(enc, scale) {
+    var sc = scale || 100;
     var decoded = [], ri, flatR, ptsR, xx, yy, kk;
     for (ri = 0; ri < enc.length; ri++) {
       flatR = enc[ri];
@@ -28,7 +32,7 @@
       xx = 0; yy = 0;
       for (kk = 0; kk < flatR.length; kk += 2) {
         xx += flatR[kk]; yy += flatR[kk + 1];
-        ptsR.push([xx / 100, yy / 100]);
+        ptsR.push([xx / sc, yy / sc]);
       }
       decoded.push(ptsR);
     }

@@ -135,7 +135,7 @@
   /* Programmatic view move (shared links): centre on a point at a given
      px-per-degree-longitude scale. */
   TMMap.prototype.centreOn = function (lat, lon, scale) {
-    if (scale) this.view.scale = Math.max(this.minScale || 0.001, scale);
+    if (scale) this.view.scale = Math.max(this.minScale || 0.001, Math.min(MAX_SCALE, scale));
     this.view.cLon = wrapDelta(lon);
     this.view.cLat = Math.max(-MERC_LAT_MAX, Math.min(MERC_LAT_MAX, lat));
     this.clampLat();
@@ -230,6 +230,10 @@
   var WELL_MIN_SCALE = 8; /* px per degree below which well markers hide */
   var HD_COAST_SCALE = 8; /* px per degree past which the HD coastline draws */
   var PIPE_MIN_SCALE = 4; /* px per degree below which pipelines hide */
+  var MAX_SCALE = 320;    /* px per degree: ~4 deg across a desktop view. The
+                             old cap of 80 stopped short of field scale (Ben,
+                             31 Aug 26); past ~320 the 0.5 deg cells and 1:10m
+                             coastline stop rewarding further zoom. */
 
   TMMap.prototype.setBathy = function (levels, show) {
     if (levels && !this.bathyPaths) {
@@ -243,6 +247,11 @@
       }
     }
     this.bathyOn = !!show && !!this.bathyPaths;
+    this.render();
+  };
+
+  TMMap.prototype.setPlaces = function (places) {
+    this.places = places || null;
     this.render();
   };
 
@@ -312,7 +321,7 @@
   };
 
   TMMap.prototype.gratStep = function (scale) {
-    var steps = [30, 15, 10, 5, 2, 1], i;
+    var steps = [30, 15, 10, 5, 2, 1, 0.5, 0.25], i;
     for (i = steps.length - 1; i >= 0; i--) {
       if (steps[i] * scale >= 55) return steps[i];
     }
@@ -442,6 +451,45 @@
       if (x < -2 || x > cssW + 2) continue;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cssH); ctx.stroke();
       if (withChrome) ctx.fillText(this.fmtDeg(wrapDelta(lon), "E", "W"), x + 3, cssH - 4);
+    }
+
+    /* place names (Natural Earth populated places, sorted by min_zoom).
+       Gate each label on NE's own min_zoom against the web-map zoom this
+       scale equals (z = log2(scale*360/256), +1 bias tuned by eye), so only
+       bigger cities label zoomed out. Collision boxes in importance order
+       keep the layer sparse; the loop stops at the first un-earned rank. */
+    if (this.places) {
+      var plZ = Math.log(view.scale * 360 / 256) / Math.LN2 + 1.0;
+      var plBoxes = [], pl, plX, plY, plW, plB, plHit, pj, pk;
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      for (pj = 0; pj < this.places.length && plBoxes.length < 110; pj++) {
+        pl = this.places[pj];
+        if (pl[0] > plZ) break;
+        plX = lonToX(pl[2]); plY = latToY(pl[1]);
+        if (plX < -70 || plX > cssW + 20 || plY < -8 || plY > cssH + 8) continue;
+        plW = ctx.measureText(pl[3]).width;
+        plB = { x: plX - 4, y: plY - 8, w: plW + 12, h: 16 };
+        plHit = false;
+        for (pk = 0; pk < plBoxes.length; pk++) {
+          if (plB.x < plBoxes[pk].x + plBoxes[pk].w && plBoxes[pk].x < plB.x + plB.w &&
+              plB.y < plBoxes[pk].y + plBoxes[pk].h && plBoxes[pk].y < plB.y + plB.h) {
+            plHit = true;
+            break;
+          }
+        }
+        if (plHit) continue;
+        plBoxes.push(plB);
+        ctx.fillStyle = "#7a705e";
+        ctx.beginPath();
+        ctx.arc(plX, plY, 1.8, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(249, 249, 247, 0.85)";
+        ctx.lineWidth = 2.5;
+        ctx.strokeText(pl[3], plX + 5, plY);
+        ctx.fillStyle = "#5f5b52";
+        ctx.fillText(pl[3], plX + 5, plY);
+      }
     }
 
     /* oil and gas assets: diamonds = platforms, circles = fields, small dots =
@@ -588,7 +636,7 @@
 
   TMMap.prototype.zoomAt = function (px, py, factor) {
     var v = this.view;
-    var ns = Math.max(this.minScale, Math.min(80, v.scale * factor));
+    var ns = Math.max(this.minScale, Math.min(MAX_SCALE, v.scale * factor));
     if (ns === v.scale) return;
     var lonAt = v.cLon + (px - this.cssW / 2) / v.scale;
     var yAt = mercY(v.cLat) + (this.cssH / 2 - py) / v.scale;
@@ -617,7 +665,7 @@
     if (w < 4 || h < 4) return;
     var mid = this.pointToLatLon((x0 + x1) / 2, (y0 + y1) / 2);
     var factor = Math.min(this.cssW / w, this.cssH / h);
-    this.view.scale = Math.max(this.minScale, Math.min(80, this.view.scale * factor));
+    this.view.scale = Math.max(this.minScale, Math.min(MAX_SCALE, this.view.scale * factor));
     this.view.cLon = mid.lon;
     this.view.cLat = mid.lat;
     this.clampLat();

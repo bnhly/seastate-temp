@@ -303,6 +303,22 @@
     return Math.min(15, Math.max(0.25, v));
   }
 
+  /* Display cut: the threshold table and the curve's x axis stop at 6 m -
+     operational planning stops well below that and the higher rows read
+     <0.1% almost everywhere (Ben, 31 Aug 26). The DATA keeps every
+     threshold: interpolation and extremes use the full arrays, and a user
+     limit above 6 m extends the cut so its own row and marker stay
+     visible. */
+  var SHOW_HS_MAX = 6;
+
+  function dispCut() {
+    var t = state.provider.thresholds;
+    var lim = Math.max(SHOW_HS_MAX, state.limit || 0);
+    var n = 0;
+    while (n < t.length && t[n] <= lim + 0.001) n++;
+    return n;
+  }
+
   function renderResults() {
     if (!state.cellData) return;
     state.limit = limitValue();
@@ -502,9 +518,10 @@
     head.appendChild(sub);
 
     /* charts */
+    var nShow = dispCut();
     window.TMCharts.renderCurve($("tm-curve"), {
-      thresholds: state.provider.thresholds,
-      p: combined.p,
+      thresholds: state.provider.thresholds.slice(0, nShow),
+      p: combined.p.slice(0, nShow),
       limit: state.limit,
       interp: function (h) { return D.interpExceedance(state.provider.thresholds, combined.p, h); }
     });
@@ -661,7 +678,7 @@
     var tbl = $("tm-table");
     var html = "<thead><tr><th>H<sub>s</sub> threshold</th><th>% of time above</th><th>approx days per month</th></tr></thead><tbody>";
     var i, pv, cls;
-    for (i = 0; i < state.provider.thresholds.length; i++) {
+    for (i = 0; i < nShow; i++) {
       pv = combined.p[i];
       cls = Math.abs(state.provider.thresholds[i] - state.limit) < 0.001 ? " class=\"tm-row-limit\"" : "";
       html += "<tr" + cls + "><td>" + state.provider.thresholds[i].toFixed(1) + " m</td>";
@@ -1104,8 +1121,9 @@
       cfg: cfg,
       meta: state.provider.meta,
       isDemo: state.isDemo,
-      thresholds: state.provider.thresholds,
-      combined: state.lastCombined,
+      thresholds: state.provider.thresholds.slice(0, dispCut()),
+      combined: state.lastCombined && Object.assign({}, state.lastCombined,
+        { p: state.lastCombined.p.slice(0, dispCut()) }),
       monthlyAtLimit: state.lastMonthly,
       selectedFlags: state.monthsOn.slice(),
       months: sel,
@@ -1184,6 +1202,7 @@
         if (state.map && state.map.hdWanted()) ensureCoastHD();
       }
     });
+    if (window.TM_PLACES) state.map.setPlaces(window.TM_PLACES);
     $("tm-zoom-in").addEventListener("click", function () { state.map.zoomStep(1.6); });
     $("tm-zoom-out").addEventListener("click", function () { state.map.zoomStep(1 / 1.6); });
     $("tm-zoom-win").addEventListener("click", function () {

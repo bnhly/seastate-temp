@@ -1,0 +1,752 @@
+/* Sea State Explorer - self contained canvas world map.
+   Web-Mercator projection (conformal, like every nautical chart and web map),
+   drag pan, wheel / pinch zoom, click to select.
+   Land drawn from window.TM_COAST (Natural Earth 50m, embedded, public domain),
+   swapping to the lazy-loaded 10m set once zoomed in.
+   No external tiles, no network: works inside any iframe / offline / preview page. */
+(function () {
+  "use strict";
+
+  var HEAT_RES = 0.5; /* deg per heat texel (matches the ERA5 grid) */
+  var HEAT_MAX = 6; /* m at top of colour ramp */
+  var HEAT_STOPS = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+
+  function hex2rgb(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  }
+  var HEAT_RGB = HEAT_STOPS.map(hex2rgb);
+
+  function heatColor(v) {
+    var t = Math.max(0, Math.min(1, v / HEAT_MAX));
+    var x = t * (HEAT_RGB.length - 1);
+    var i = Math.min(HEAT_RGB.length - 2, Math.floor(x));
+    var f = x - i, a = HEAT_RGB[i], b = HEAT_RGB[i + 1];
+    return [
+      Math.round(a[0] + f * (b[0] - a[0])),
+      Math.round(a[1] + f * (b[1] - a[1])),
+      Math.round(a[2] + f * (b[2] - a[2]))
+    ];
+  }
+
+  function wrapDelta(d) {
+    while (d < -180) d += 360;
+    while (d >= 180) d -= 360;
+    return d;
+  }
+
+  /* Web-Mercator vertical, in "degree units" (dy/dlat = 1 at the equator) so
+     view.scale keeps meaning px per degree of LONGITUDE everywhere. Conformal:
+     local shapes are right at every latitude, which the plain equirectangular
+     map was not (land looked stretched ~2x wide at North Sea latitudes). */
+  var MERC_LAT_MAX = 85.05113;
+  function mercY(lat) {
+    var la = Math.max(-MERC_LAT_MAX, Math.min(MERC_LAT_MAX, lat));
+    return (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + la * Math.PI / 360));
+  }
+  function invMercY(y) {
+    return (360 / Math.PI) * Math.atan(Math.exp(y * Math.PI / 180)) - 90;
+  }
+  var MERC_Y_MAX = mercY(MERC_LAT_MAX);
+
+  function TMMap(canvas, opts) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.opts = opts || {};
+    this.view = { cLon: 15, cLat: 5, scale: 3 };
+    this.selection = null;   /* {lat, lon} clicked point */
+    this.cellRect = null;    /* {lat, lon, res} data cell */
+    this.heatCanvas = null;
+    this.bathyPaths = null;  /* [{d, path, alpha, w}] built by setBathy */
+    this.bathyOn = false;
+    this.assets = null;      /* [{n,t,s,c,la,lo}] */
+    this.assetsOn = false;
+    this.hoverAsset = null;
+    this.dragMode = "pan";   /* "pan" | "zoomwin" (one-shot rubber-band zoom) */
+    this.zoomDrag = null;    /* {x0, y0, x1, y1} while a zoom box is being drawn */
+    this.landPath = this.buildLandPath();
+    this.bordersPath = this.buildBordersPath();
+    this.pointers = {};
+    this.bindEvents();
+    this.resize();
+    var self = this;
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { self.resize(); }).observe(canvas.parentNode);
+    } else {
+      window.addEventListener("resize", function () { self.resize(); });
+    }
+  }
+
+  /* All geographic Path2Ds are built in (lon, mercY) space and drawn with one
+     linear transform per frame. */
+  function pathFromRings(rings, close) {
+    var p = new Path2D(), r, i, ring;
+    for (r = 0; r < rings.length; r++) {
+      ring = rings[r];
+      p.moveTo(ring[0][0], mercY(ring[0][1]));
+      for (i = 1; i < ring.length; i++) p.lineTo(ring[i][0], mercY(ring[i][1]));
+      if (close) p.closePath();
+    }
+    return p;
+  }
+
+  TMMap.prototype.buildLandPath = function () {
+    return pathFromRings(window.TM_COAST || [], true);
+  };
+
+  /* High-detail coastline for zoomed views (rings decoded by the caller).
+     Only the DRAWN land swaps; the 50m set stays the data layer. */
+  TMMap.prototype.setCoastHD = function (rings) {
+    this.hdLandPath = pathFromRings(rings, true);
+    this.render();
+  };
+
+  TMMap.prototype.hdWanted = function () {
+    return this.view.scale >= HD_COAST_SCALE;
+  };
+
+  /* Country borders (polylines, never closed). null when borders.js is absent. */
+  TMMap.prototype.buildBordersPath = function () {
+    var lines = window.TM_BORDERS || [];
+    return lines.length ? pathFromRings(lines, false) : null;
+  };
+
+  TMMap.prototype.resize = function () {
+    var el = this.canvas, w = el.parentNode.clientWidth, h = el.parentNode.clientHeight;
+    if (!w || !h) return;
+    this.cssW = w; this.cssH = h;
+    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    el.width = Math.round(w * this.dpr);
+    el.height = Math.round(h * this.dpr);
+    this.minScale = w / 360;
+    if (this.view.scale < this.minScale) this.view.scale = this.minScale;
+    this.clampLat();
+    this.render();
+  };
+
+  TMMap.prototype.clampLat = function () {
+    var half = this.cssH / (2 * this.view.scale);
+    if (half >= MERC_Y_MAX) { this.view.cLat = 0; return; }
+    var y = mercY(this.view.cLat);
+    if (y + half > MERC_Y_MAX) y = MERC_Y_MAX - half;
+    if (y - half < -MERC_Y_MAX) y = -MERC_Y_MAX + half;
+    this.view.cLat = invMercY(y);
+  };
+
+  /* Programmatic view move (shared links): centre on a point at a given
+     px-per-degree-longitude scale. */
+  TMMap.prototype.centreOn = function (lat, lon, scale) {
+    if (scale) this.view.scale = Math.max(this.minScale || 0.001, scale);
+    this.view.cLon = wrapDelta(lon);
+    this.view.cLat = Math.max(-MERC_LAT_MAX, Math.min(MERC_LAT_MAX, lat));
+    this.clampLat();
+    this.render();
+  };
+
+  TMMap.prototype.lonToX = function (lon, view) {
+    var v = view || this.view;
+    return this.cssW / 2 + wrapDelta(lon - v.cLon) * v.scale;
+  };
+  TMMap.prototype.latToY = function (lat, view) {
+    var v = view || this.view;
+    return this.cssH / 2 - (mercY(lat) - mercY(v.cLat)) * v.scale;
+  };
+  TMMap.prototype.pointToLatLon = function (x, y) {
+    var v = this.view;
+    var lat = invMercY(mercY(v.cLat) + (this.cssH / 2 - y) / v.scale);
+    var lon = v.cLon + (x - this.cssW / 2) / v.scale;
+    return { lat: Math.max(-90, Math.min(90, lat)), lon: wrapDelta(lon) };
+  };
+
+  TMMap.prototype.setHeatField = function (fn) {
+    if (!fn) { this.heatCanvas = null; this.render(); return; }
+    var nlon = Math.round(360 / HEAT_RES), nlat = Math.round(180 / HEAT_RES);
+    var vals = new Float32Array(nlon * nlat), row, col, lat, lon, v, i;
+    for (row = 0; row < nlat; row++) {
+      lat = 90 - HEAT_RES * (row + 0.5);
+      for (col = 0; col < nlon; col++) {
+        lon = -180 + HEAT_RES * (col + 0.5);
+        v = fn(lat, lon);
+        vals[row * nlon + col] = (v === null || v === undefined || isNaN(v)) ? NaN : v;
+      }
+    }
+    /* Bleed values into empty texels (3 passes of 8-neighbour averaging,
+       ~1.5 deg reach) so the shading runs under the drawn coastline instead
+       of leaving pale notches where coastal cells have no data. Land texels
+       are covered by the land fill; large no-data regions (polar ice) stay
+       clear beyond the bleed rim. */
+    var src = vals, out, pass, sum, cnt, dr, dc, rr, cc, vv;
+    for (pass = 0; pass < 3; pass++) {
+      out = new Float32Array(src);
+      for (row = 0; row < nlat; row++) {
+        for (col = 0; col < nlon; col++) {
+          i = row * nlon + col;
+          if (!isNaN(src[i])) continue;
+          sum = 0; cnt = 0;
+          for (dr = -1; dr <= 1; dr++) {
+            rr = row + dr;
+            if (rr < 0 || rr >= nlat) continue;
+            for (dc = -1; dc <= 1; dc++) {
+              cc = (col + dc + nlon) % nlon;
+              vv = src[rr * nlon + cc];
+              if (!isNaN(vv)) { sum += vv; cnt++; }
+            }
+          }
+          if (cnt) out[i] = sum / cnt;
+        }
+      }
+      src = out;
+    }
+    /* colormap into a MERCATOR-warped canvas (rows spaced in merc y, each row
+       sampling its latitude's value row) so rendering stays one linear
+       drawImage per frame */
+    var nrows = 720;
+    var cv = document.createElement("canvas");
+    cv.width = nlon; cv.height = nrows;
+    var cx = cv.getContext("2d");
+    var img = cx.createImageData(nlon, nrows), c, o, orow, srow, lat2;
+    for (orow = 0; orow < nrows; orow++) {
+      lat2 = invMercY(MERC_Y_MAX - (orow + 0.5) / nrows * 2 * MERC_Y_MAX);
+      srow = Math.max(0, Math.min(nlat - 1, Math.floor((90 - lat2) / HEAT_RES)));
+      for (col = 0; col < nlon; col++) {
+        v = src[srow * nlon + col];
+        o = (orow * nlon + col) * 4;
+        if (isNaN(v)) {
+          img.data[o + 3] = 0;
+        } else {
+          c = heatColor(v);
+          img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
+          img.data[o + 3] = 235;
+        }
+      }
+    }
+    cx.putImageData(img, 0, 0);
+    this.heatCanvas = cv;
+    this.render();
+  };
+
+  /* Depth contour display: levels come from TMData.bathyLevels(). Only some
+     depths are DRAWN (200 / 1000 / 3000); the rest serve the click lookup. */
+  var BATHY_STYLE = { 200: { a: 0.55, w: 1.3 }, 1000: { a: 0.4, w: 1 }, 3000: { a: 0.26, w: 1 } };
+  var WELL_MIN_SCALE = 8; /* px per degree below which well markers hide */
+  var HD_COAST_SCALE = 8; /* px per degree past which the HD coastline draws */
+  var PIPE_MIN_SCALE = 4; /* px per degree below which pipelines hide */
+
+  TMMap.prototype.setBathy = function (levels, show) {
+    if (levels && !this.bathyPaths) {
+      this.bathyPaths = [];
+      var i, st;
+      for (i = 0; i < levels.length; i++) {
+        st = BATHY_STYLE[levels[i].d];
+        if (!st) continue;
+        this.bathyPaths.push({ d: levels[i].d, path: pathFromRings(levels[i].rings, false),
+          alpha: st.a, w: st.w });
+      }
+    }
+    this.bathyOn = !!show && !!this.bathyPaths;
+    this.render();
+  };
+
+  TMMap.prototype.setAssets = function (assets, show) {
+    if (assets) this.assets = assets;
+    this.assetsOn = !!show && !!(this.assets && this.assets.length);
+    this.hoverAsset = null;
+    this.render();
+  };
+
+  /* Predicate applied to every asset before drawing and hover (the market
+     filter row). null = show everything. */
+  TMMap.prototype.setAssetFilter = function (fn) {
+    this.assetFilter = fn || null;
+    this.hoverAsset = null;
+    this.render();
+  };
+
+  /* Pipelines: decoded [{pts:[[lat,lon],...]}], one merc-space Path2D. */
+  TMMap.prototype.setAssetLines = function (lines) {
+    var p = new Path2D(), i, k, pts;
+    for (i = 0; i < (lines || []).length; i++) {
+      pts = lines[i].pts;
+      p.moveTo(pts[0][1], mercY(pts[0][0]));
+      for (k = 1; k < pts.length; k++) p.lineTo(pts[k][1], mercY(pts[k][0]));
+    }
+    this.assetLinesPath = (lines && lines.length) ? p : null;
+    this.linesOn = this.linesOn === undefined ? true : this.linesOn;
+    this.render();
+  };
+
+  TMMap.prototype.setLinesVisible = function (on) {
+    this.linesOn = !!on;
+    this.render();
+  };
+
+  /* Historical cyclone tracks: two Path2Ds (below / at-or-above Cat 3) so
+     forty years of tracks read as a density map with the majors standing
+     out. tracks: [{w (max kt), pts: [[lat, lon], ...]}] */
+  TMMap.prototype.setCycTracks = function (tracks) {
+    var minor = new Path2D(), major = new Path2D(), i, k, pts, p;
+    for (i = 0; i < (tracks || []).length; i++) {
+      pts = tracks[i].pts;
+      if (!pts || pts.length < 2) continue;
+      p = tracks[i].w >= 96 ? major : minor;
+      p.moveTo(pts[0][1], mercY(pts[0][0]));
+      for (k = 1; k < pts.length; k++) p.lineTo(pts[k][1], mercY(pts[k][0]));
+    }
+    this.cycMinorPath = (tracks && tracks.length) ? minor : null;
+    this.cycMajorPath = (tracks && tracks.length) ? major : null;
+    this.render();
+  };
+
+  TMMap.prototype.setCycTracksVisible = function (on) {
+    this.cycTracksOn = !!on;
+    this.render();
+  };
+
+  TMMap.prototype.pipesVisible = function () {
+    return this.view.scale >= PIPE_MIN_SCALE;
+  };
+
+  TMMap.prototype.setSelection = function (lat, lon, cellRect) {
+    this.selection = (lat === null) ? null : { lat: lat, lon: lon };
+    this.cellRect = cellRect || null;
+    this.render();
+  };
+
+  TMMap.prototype.gratStep = function (scale) {
+    var steps = [30, 15, 10, 5, 2, 1], i;
+    for (i = steps.length - 1; i >= 0; i--) {
+      if (steps[i] * scale >= 55) return steps[i];
+    }
+    return 30;
+  };
+
+  TMMap.prototype.render = function () {
+    this.renderTo(this.ctx, this.cssW, this.cssH, this.dpr, this.view, true);
+    if (this.opts.onView) this.opts.onView();
+  };
+
+  TMMap.prototype.wellsVisible = function () {
+    return this.view.scale >= WELL_MIN_SCALE;
+  };
+
+  TMMap.prototype.renderTo = function (ctx, cssW, cssH, dpr, view, withChrome) {
+    if (!cssW || !cssH) return;
+    var self = this;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = "#e6edf4";
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    var shifts = [-360, 0, 360], s, shift, x0, y0;
+
+    function lonToX(lon) { return cssW / 2 + wrapDelta(lon - view.cLon) * view.scale; }
+    function latToY(lat) { return cssH / 2 - (mercY(lat) - mercY(view.cLat)) * view.scale; }
+
+    /* heat layer (bilinear-smoothed; texels are pre-bled so the smoothing
+       never blends toward transparent at the coast) */
+    if (this.heatCanvas) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      for (s = 0; s < shifts.length; s++) {
+        shift = shifts[s];
+        x0 = cssW / 2 + ((-180 + shift) - view.cLon) * view.scale;
+        y0 = latToY(90);
+        if (x0 > cssW || x0 + 360 * view.scale < 0) continue;
+        ctx.drawImage(this.heatCanvas, x0, y0, 360 * view.scale, 2 * MERC_Y_MAX * view.scale);
+      }
+    }
+
+    /* depth contours (under land so coast-coincident segments stay hidden) */
+    var bp;
+    if (this.bathyOn && this.bathyPaths) {
+      for (s = 0; s < shifts.length; s++) {
+        shift = shifts[s];
+        x0 = cssW / 2 + ((-180 + shift) - view.cLon) * view.scale;
+        if (x0 > cssW || x0 + 360 * view.scale < 0) continue;
+        ctx.setTransform(
+          dpr * view.scale, 0, 0, -dpr * view.scale,
+          dpr * (cssW / 2 + (shift - view.cLon) * view.scale),
+          dpr * (cssH / 2 + mercY(view.cLat) * view.scale)
+        );
+        for (var b2 = 0; b2 < this.bathyPaths.length; b2++) {
+          bp = this.bathyPaths[b2];
+          ctx.strokeStyle = "rgba(58, 84, 110, " + bp.alpha + ")";
+          ctx.lineWidth = bp.w / view.scale;
+          ctx.stroke(bp.path);
+        }
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    /* land */
+    for (s = 0; s < shifts.length; s++) {
+      shift = shifts[s];
+      x0 = cssW / 2 + ((-180 + shift) - view.cLon) * view.scale;
+      if (x0 > cssW || x0 + 360 * view.scale < 0) continue;
+      ctx.setTransform(
+        dpr * view.scale, 0, 0, -dpr * view.scale,
+        dpr * (cssW / 2 + (shift - view.cLon) * view.scale),
+        dpr * (cssH / 2 + mercY(view.cLat) * view.scale)
+      );
+      var landP = (this.hdLandPath && view.scale >= HD_COAST_SCALE) ? this.hdLandPath : this.landPath;
+      ctx.fillStyle = "#ddd8cb";
+      ctx.lineJoin = "round";
+      ctx.fill(landP);
+      ctx.strokeStyle = "#b7b1a1";
+      ctx.lineWidth = 1 / view.scale;
+      ctx.stroke(landP);
+      if (this.bordersPath) {
+        ctx.strokeStyle = "rgba(122, 112, 94, 0.45)";
+        ctx.lineWidth = 0.9 / view.scale;
+        ctx.stroke(this.bordersPath);
+      }
+      if (this.assetsOn && this.linesOn !== false && this.assetLinesPath &&
+          view.scale >= PIPE_MIN_SCALE) {
+        ctx.strokeStyle = "rgba(194, 87, 31, 0.7)";
+        ctx.lineWidth = 1.4 / view.scale;
+        ctx.stroke(this.assetLinesPath);
+      }
+      if (this.cycTracksOn && this.cycMinorPath) {
+        ctx.strokeStyle = "rgba(122, 84, 160, 0.22)";
+        ctx.lineWidth = 1.0 / view.scale;
+        ctx.stroke(this.cycMinorPath);
+        ctx.strokeStyle = "rgba(122, 84, 160, 0.5)";
+        ctx.lineWidth = 1.3 / view.scale;
+        ctx.stroke(this.cycMajorPath);
+      }
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    /* graticule */
+    var step = this.gratStep(view.scale), lat, lon, x, y;
+    ctx.strokeStyle = "rgba(20, 40, 60, 0.10)";
+    ctx.lineWidth = 1;
+    ctx.fillStyle = "#898781";
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textBaseline = "bottom";
+    var latLbl;
+    for (lat = -90 + step; lat < 90; lat += step) {
+      y = latToY(lat);
+      if (y < -2 || y > cssH + 2) continue;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cssW, y); ctx.stroke();
+      if (withChrome) {
+        latLbl = this.fmtDeg(lat, "N", "S");
+        ctx.fillText(latLbl, 4, y - 2);
+        /* right edge too: the legend hides the bottom-left labels */
+        ctx.fillText(latLbl, cssW - 4 - ctx.measureText(latLbl).width, y - 2);
+      }
+    }
+    var lonStart = Math.ceil((view.cLon - cssW / (2 * view.scale)) / step) * step;
+    var lonEnd = view.cLon + cssW / (2 * view.scale);
+    for (lon = lonStart; lon <= lonEnd; lon += step) {
+      x = lonToX(lon);
+      if (x < -2 || x > cssW + 2) continue;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cssH); ctx.stroke();
+      if (withChrome) ctx.fillText(this.fmtDeg(wrapDelta(lon), "E", "W"), x + 3, cssH - 4);
+    }
+
+    /* oil and gas assets: diamonds = platforms, circles = fields, small dots =
+       wells (wells only past WELL_MIN_SCALE, they are far too dense zoomed out) */
+    if (this.assetsOn && this.assets) {
+      var ai, aa, ax, ay, isPlat, isWell;
+      var showWells = view.scale >= WELL_MIN_SCALE;
+      for (ai = 0; ai < this.assets.length; ai++) {
+        aa = this.assets[ai];
+        isWell = aa.t === "well";
+        if (isWell && !showWells) continue;
+        if (this.assetFilter && !this.assetFilter(aa)) continue;
+        ax = lonToX(aa.lo); ay = latToY(aa.la);
+        if (ax < -8 || ax > cssW + 8 || ay < -8 || ay > cssH + 8) continue;
+        isPlat = (aa.t || "").indexOf("platform") >= 0;
+        ctx.beginPath();
+        if (isWell) {
+          ctx.arc(ax, ay, 2.4, 0, 2 * Math.PI);
+        } else if (isPlat) {
+          ctx.moveTo(ax, ay - 4.5); ctx.lineTo(ax + 4.5, ay);
+          ctx.lineTo(ax, ay + 4.5); ctx.lineTo(ax - 4.5, ay);
+          ctx.closePath();
+        } else {
+          ctx.arc(ax, ay, 3.6, 0, 2 * Math.PI);
+        }
+        ctx.fillStyle = "#c2571f";
+        ctx.strokeStyle = "rgba(252, 252, 251, 0.95)";
+        ctx.lineWidth = isWell ? 1 : 1.4;
+        ctx.fill();
+        ctx.stroke();
+      }
+      /* hover highlight + label card (interactive view only) */
+      if (withChrome && this.hoverAsset) {
+        aa = this.hoverAsset;
+        ax = lonToX(aa.lo); ay = latToY(aa.la);
+        ctx.beginPath();
+        ctx.arc(ax, ay, 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = "#c2571f";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        var line1 = aa.n;
+        var line2 = (aa.t || "asset") + (aa.s ? ", " + aa.s : "") + (aa.c ? " \u00B7 " + aa.c : "");
+        var l3parts = [];
+        if (aa.d) l3parts.push("~" + aa.d.toLocaleString() + " m water");
+        if (aa.y) l3parts.push(String(aa.y));
+        if (aa.o) l3parts.push(aa.o);
+        var line3 = l3parts.join(" \u00B7 ");
+        ctx.font = "600 12px system-ui, sans-serif";
+        var w1 = ctx.measureText(line1).width;
+        ctx.font = "11px system-ui, sans-serif";
+        var w2 = Math.max(ctx.measureText(line2).width, line3 ? ctx.measureText(line3).width : 0);
+        var bw = Math.max(w1, w2) + 18, bh = line3 ? 52 : 38;
+        var bx = Math.min(cssW - bw - 6, Math.max(6, ax + 12));
+        var by = Math.max(6, ay - bh - 10);
+        ctx.fillStyle = "rgba(252, 252, 251, 0.97)";
+        ctx.strokeStyle = "rgba(11, 11, 11, 0.18)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 6); else ctx.rect(bx, by, bw, bh);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#0b0b0b";
+        ctx.font = "600 12px system-ui, sans-serif";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(line1, bx + 9, by + 16);
+        ctx.fillStyle = "#52514e";
+        ctx.font = "11px system-ui, sans-serif";
+        ctx.fillText(line2, bx + 9, by + 30);
+        if (line3) ctx.fillText(line3, bx + 9, by + 44);
+      }
+    }
+
+    /* data cell rectangle */
+    if (this.cellRect) {
+      var r = this.cellRect, half = r.res / 2;
+      var rx = lonToX(r.lon - half), ry = latToY(r.lat + half);
+      var rw = r.res * view.scale;
+      var rh = (mercY(r.lat + half) - mercY(r.lat - half)) * view.scale;
+      ctx.strokeStyle = "rgba(252, 252, 251, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.strokeStyle = "rgba(11, 11, 11, 0.75)";
+      ctx.lineWidth = 1.25;
+      ctx.strokeRect(rx, ry, rw, rh);
+    }
+
+    /* rubber-band zoom rectangle */
+    if (withChrome && this.zoomDrag) {
+      var zd = this.zoomDrag;
+      var zx = Math.min(zd.x0, zd.x1), zy = Math.min(zd.y0, zd.y1);
+      var zw = Math.abs(zd.x1 - zd.x0), zh = Math.abs(zd.y1 - zd.y0);
+      ctx.fillStyle = "rgba(20, 48, 74, 0.12)";
+      ctx.fillRect(zx, zy, zw, zh);
+      ctx.strokeStyle = "#14304a";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(zx, zy, zw, zh);
+    }
+
+    /* selection marker */
+    if (this.selection) {
+      var mx = lonToX(this.selection.lon), my = latToY(this.selection.lat);
+      ctx.beginPath();
+      ctx.arc(mx, my, 7, 0, 2 * Math.PI);
+      ctx.fillStyle = "rgba(252, 252, 251, 0.95)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(mx, my, 4.5, 0, 2 * Math.PI);
+      ctx.fillStyle = "#d03b3b";
+      ctx.fill();
+    }
+  };
+
+  TMMap.prototype.fmtDeg = function (v, pos, neg) {
+    var a = Math.abs(Math.round(v * 10) / 10);
+    if (a === 0) return "0\u00B0";
+    return a + "\u00B0" + (v >= 0 ? pos : neg);
+  };
+
+  /* Standalone snapshot for the PDF: centred on a point, fixed span. Returns dataURL. */
+  TMMap.prototype.snapshot = function (lat, lon, lonSpan, w, h) {
+    var cv = document.createElement("canvas");
+    var dpr = 2;
+    cv.width = w * dpr; cv.height = h * dpr;
+    var scale = w / lonSpan;
+    var half = h / (2 * scale);
+    var yC = mercY(lat);
+    if (half >= MERC_Y_MAX) {
+      yC = 0;
+    } else {
+      if (yC + half > MERC_Y_MAX) yC = MERC_Y_MAX - half;
+      if (yC - half < -MERC_Y_MAX) yC = -MERC_Y_MAX + half;
+    }
+    var view = { cLon: lon, cLat: invMercY(yC), scale: Math.max(scale, 0.001) };
+    var saveSel = this.selection, saveCell = this.cellRect;
+    var savedW = this.cssW, savedH = this.cssH;
+    this.cssW = w; this.cssH = h;
+    this.renderTo(cv.getContext("2d"), w, h, dpr, view, false);
+    this.cssW = savedW; this.cssH = savedH;
+    this.selection = saveSel; this.cellRect = saveCell;
+    return cv.toDataURL("image/png");
+  };
+
+  /* ---------- interaction ---------- */
+
+  TMMap.prototype.zoomAt = function (px, py, factor) {
+    var v = this.view;
+    var ns = Math.max(this.minScale, Math.min(80, v.scale * factor));
+    if (ns === v.scale) return;
+    var lonAt = v.cLon + (px - this.cssW / 2) / v.scale;
+    var yAt = mercY(v.cLat) + (this.cssH / 2 - py) / v.scale;
+    v.scale = ns;
+    v.cLon = wrapDelta(lonAt - (px - this.cssW / 2) / ns);
+    v.cLat = invMercY(yAt - (this.cssH / 2 - py) / ns);
+    this.clampLat();
+    this.render();
+  };
+
+  TMMap.prototype.zoomStep = function (factor) {
+    this.zoomAt(this.cssW / 2, this.cssH / 2, factor);
+  };
+
+  TMMap.prototype.setZoomWindowMode = function (on) {
+    this.dragMode = on ? "zoomwin" : "pan";
+    if (!on) this.zoomDrag = null;
+    this.canvas.style.cursor = on ? "zoom-in" : "crosshair";
+    if (this.opts.onDragMode) this.opts.onDragMode(this.dragMode);
+    this.render();
+  };
+
+  /* Fit the view to a screen-space rectangle (the rubber-band zoom). */
+  TMMap.prototype.fitScreenRect = function (x0, y0, x1, y1) {
+    var w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+    if (w < 4 || h < 4) return;
+    var mid = this.pointToLatLon((x0 + x1) / 2, (y0 + y1) / 2);
+    var factor = Math.min(this.cssW / w, this.cssH / h);
+    this.view.scale = Math.max(this.minScale, Math.min(80, this.view.scale * factor));
+    this.view.cLon = mid.lon;
+    this.view.cLat = mid.lat;
+    this.clampLat();
+    this.render();
+  };
+
+  TMMap.prototype.bindEvents = function () {
+    var self = this, el = this.canvas;
+
+    el.addEventListener("pointerdown", function (e) {
+      el.setPointerCapture(e.pointerId);
+      self.pointers[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+      self.dragMoved = 0;
+      self.downAt = { x: e.offsetX, y: e.offsetY, t: Date.now() };
+      if ((self.dragMode === "zoomwin" || e.shiftKey) && Object.keys(self.pointers).length === 1) {
+        self.zoomDrag = { x0: e.offsetX, y0: e.offsetY, x1: e.offsetX, y1: e.offsetY };
+      }
+    });
+
+    el.addEventListener("pointermove", function (e) {
+      if (self.zoomDrag && self.pointers[e.pointerId]) {
+        self.zoomDrag.x1 = e.offsetX;
+        self.zoomDrag.y1 = e.offsetY;
+        self.dragMoved += 1;
+        self.render();
+        return;
+      }
+      var p = self.pointers[e.pointerId];
+      if (!p) {
+        if (self.opts.onHover) self.opts.onHover(self.pointToLatLon(e.offsetX, e.offsetY));
+        return;
+      }
+      var ids = Object.keys(self.pointers);
+      if (ids.length === 1) {
+        var dx = e.offsetX - p.x, dy = e.offsetY - p.y;
+        self.dragMoved += Math.abs(dx) + Math.abs(dy);
+        self.view.cLon = wrapDelta(self.view.cLon - dx / self.view.scale);
+        self.view.cLat = invMercY(mercY(self.view.cLat) + dy / self.view.scale);
+        self.clampLat();
+        p.x = e.offsetX; p.y = e.offsetY;
+        self.render();
+      } else if (ids.length === 2) {
+        p.x = e.offsetX; p.y = e.offsetY;
+        var a = self.pointers[ids[0]], b = self.pointers[ids[1]];
+        var d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (self.lastPinch) {
+          var mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          self.zoomAt(mid.x, mid.y, d / self.lastPinch);
+          self.dragMoved += 10;
+        }
+        self.lastPinch = d;
+      }
+    });
+
+    function endPointer(e) {
+      delete self.pointers[e.pointerId];
+      if (Object.keys(self.pointers).length < 2) self.lastPinch = null;
+      if (self.zoomDrag) {
+        var zr = self.zoomDrag;
+        self.zoomDrag = null;
+        var wasMode = self.dragMode === "zoomwin";
+        if (Math.abs(zr.x1 - zr.x0) > 14 && Math.abs(zr.y1 - zr.y0) > 14) {
+          self.fitScreenRect(zr.x0, zr.y0, zr.x1, zr.y1);
+        } else if (self.opts.onSelect) {
+          /* a tap in zoom-window mode still selects the location */
+          var ll2 = self.pointToLatLon(e.offsetX, e.offsetY);
+          self.opts.onSelect(ll2.lat, ll2.lon);
+        }
+        if (wasMode) self.setZoomWindowMode(false); /* one-shot, like CAD zoom window */
+        self.downAt = null;
+        self.render();
+        return;
+      }
+      if (self.downAt && self.dragMoved < 6 && Date.now() - self.downAt.t < 700) {
+        var ll = self.pointToLatLon(e.offsetX, e.offsetY);
+        self.downAt = null;
+        if (self.opts.onSelect) self.opts.onSelect(ll.lat, ll.lon);
+      }
+      self.downAt = null;
+    }
+    el.addEventListener("pointerup", endPointer);
+    el.addEventListener("pointercancel", function (e) { delete self.pointers[e.pointerId]; self.lastPinch = null; });
+
+    el.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      self.zoomAt(e.offsetX, e.offsetY, Math.pow(1.0015, -e.deltaY));
+    }, { passive: false });
+
+    el.addEventListener("dblclick", function (e) {
+      e.preventDefault();
+      self.zoomAt(e.offsetX, e.offsetY, 2);
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && (self.zoomDrag || self.dragMode === "zoomwin")) {
+        self.zoomDrag = null;
+        self.setZoomWindowMode(false);
+      }
+    });
+
+    el.addEventListener("mousemove", function (e) {
+      if (Object.keys(self.pointers).length) return;
+      if (self.opts.onHover) {
+        self.opts.onHover(self.pointToLatLon(e.offsetX, e.offsetY));
+      }
+      /* asset hover hit-test (10 px radius) */
+      var next = null;
+      if (self.assetsOn && self.assets) {
+        var i, a2, ax, ay, d2, best = 101;
+        var wellsVisible = self.view.scale >= WELL_MIN_SCALE;
+        for (i = 0; i < self.assets.length; i++) {
+          a2 = self.assets[i];
+          if (a2.t === "well" && !wellsVisible) continue;
+          if (self.assetFilter && !self.assetFilter(a2)) continue;
+          ax = self.lonToX(a2.lo); ay = self.latToY(a2.la);
+          d2 = (ax - e.offsetX) * (ax - e.offsetX) + (ay - e.offsetY) * (ay - e.offsetY);
+          if (d2 < best) { best = d2; next = a2; }
+        }
+      }
+      if (next !== self.hoverAsset) {
+        self.hoverAsset = next;
+        self.render();
+      }
+    });
+    el.addEventListener("mouseleave", function () {
+      if (self.opts.onHover) self.opts.onHover(null);
+      if (self.hoverAsset) { self.hoverAsset = null; self.render(); }
+    });
+  };
+
+  window.TMMap = TMMap;
+})();

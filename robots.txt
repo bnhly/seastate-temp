@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /data/
+Disallow: /vendor/
+
+Sitemap: https://seastate.thrustm.com/sitemap.xml

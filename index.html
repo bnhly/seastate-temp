@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sea State Explorer | Offshore wave, wind and weather window statistics | Thrust Maritime</title>
+<meta name="description" content="Click any offshore location for monthly wave height exceedance, wave period and direction, wind speed, extreme sea states and weather window statistics, with a one page PDF summary. Free metocean planning tool for subsea and marine operations from Thrust Maritime.">
+<link rel="canonical" href="https://seastate.thrustm.com/">
+<meta name="theme-color" content="#14304a">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Thrust Maritime">
+<meta property="og:title" content="Sea State Explorer">
+<meta property="og:description" content="Click any sea location, pick your months, read the odds: wave height exceedance, period and direction, wind, extremes and weather windows. Free metocean statistics with a one page PDF summary.">
+<meta property="og:url" content="https://seastate.thrustm.com/">
+<meta property="og:image" content="https://seastate.thrustm.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="World map with the Sea State Explorer name: offshore wave, wind and weather window statistics for any location at sea.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Sea State Explorer">
+<meta name="twitter:description" content="Free monthly wave, wind, extreme sea state and weather window statistics for any offshore location, with a one page PDF summary.">
+<meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Sea State Explorer",
+  "url": "https://seastate.thrustm.com/",
+  "image": "https://seastate.thrustm.com/og-image.png",
+  "description": "Free web tool giving holistic site metocean statistics for planning subsea and marine operations at any offshore location: monthly significant wave height exceedance, typical wave period and direction, wind speeds, extreme sea states and weather window counts, based on the ERA5 global reanalysis. Includes water depth context, offshore oil and gas infrastructure, and a one page PDF summary.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Any (web browser)",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "featureList": [
+    "Monthly probability of exceeding significant wave height thresholds",
+    "Typical peak wave period and wave direction rose by month",
+    "Monthly wind speed statistics (typical and top decile)",
+    "Extreme sea state levels from the long term distribution",
+    "Weather window counts: calm spells by threshold and duration",
+    "Global coverage from the ERA5 reanalysis (Copernicus Climate Change Service)",
+    "Water depth at the selected point and depth contours",
+    "Offshore oil and gas infrastructure overlay",
+    "One page PDF summary"
+  ],
+  "publisher": {
+    "@type": "Organization",
+    "name": "Thrust Maritime",
+    "url": "https://www.thrustm.com"
+  }
+}
+</script>
+</head>
+<body>
+<div id="tm-app">
+
+  <header class="tm-header">
+    <div class="tm-brand">
+      <span class="tm-brand-name">THRUST MARITIME</span>
+      <span class="tm-brand-sep"></span>
+      <h1 class="tm-brand-tool">Sea State Explorer</h1>
+    </div>
+    <p class="tm-tagline">How rough, how windy, how often do you get a workable window? Click
+    anywhere at sea, pick your months, and read the long term odds for the site.</p>
+    <noscript><p class="tm-tagline">This tool needs JavaScript: it draws an interactive world map
+    and computes wave, wind and weather window statistics in your browser.</p></noscript>
+  </header>
+
+  <div id="tm-banner" class="tm-banner" hidden></div>
+
+  <main>
+    <section class="tm-map-card">
+      <div class="tm-map-wrap">
+        <canvas id="tm-map"></canvas>
+        <div class="tm-map-zoom">
+          <button id="tm-zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button id="tm-zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+          <button id="tm-zoom-win" type="button" aria-pressed="false" aria-label="Zoom to an area"
+            title="Drag a box to zoom to it (shortcut: hold Shift and drag any time)">&#9633;</button>
+        </div>
+        <div class="tm-map-legend" id="tm-legend" hidden></div>
+        <div class="tm-map-hint" id="tm-hint">Click the map to choose a location</div>
+        <div class="tm-map-coords" id="tm-coords" hidden></div>
+      </div>
+      <div class="tm-layer-toggles">
+        <label><input type="checkbox" id="tm-shade" checked> Average wave height shading</label>
+        <label><input type="checkbox" id="tm-contours"> Depth contours</label>
+        <label id="tm-assets-toggle" hidden><input type="checkbox" id="tm-assets" checked> Oil and gas assets</label>
+        <label id="tm-cyctracks-label" hidden><input type="checkbox" id="tm-cyctracks"> Cyclone tracks</label>
+      </div>
+      <div class="tm-asset-filters" id="tm-asset-filters" hidden>
+        <span class="tm-f-label">Filter assets:</span>
+        <label><input type="checkbox" id="tm-f-wells" checked> wells</label>
+        <label title="Producing, injecting, development, completed or suspended wells. Untick to also see plugged, abandoned and exploration-only wells."><input type="checkbox" id="tm-f-active" checked> in service only</label>
+        <label><input type="checkbox" id="tm-f-plats" checked> platforms</label>
+        <label><input type="checkbox" id="tm-f-fields" checked> fields</label>
+        <label id="tm-f-pipes-label" hidden><input type="checkbox" id="tm-f-pipes" checked> pipelines</label>
+        <label class="tm-f-depth">water depth
+          <input id="tm-f-dmin" type="number" min="0" placeholder="min" inputmode="numeric"> to
+          <input id="tm-f-dmax" type="number" min="0" placeholder="max" inputmode="numeric"> m</label>
+        <input id="tm-f-text" type="text" placeholder="status, operator or name contains...">
+        <span id="tm-f-count"></span>
+      </div>
+      <div class="tm-goto">
+        <label for="tm-goto-in">Or type a position <span class="tm-goto-datum"
+          title="Positions are read as WGS84, the datum GPS uses and the one every dataset here is served in. A position lifted off an older chart on a local datum (ED50, NAD27, AGD66 and similar) can sit up to a few hundred metres away from the same numbers in WGS84.">(WGS84 / GPS)</span></label>
+        <input id="tm-goto-in" type="text" autocomplete="off" spellcheck="false"
+          placeholder="56 30.25 N, 3 12.5 E &#183; 56&#176;30&#39;15&#34;N 3&#176;12&#39;30&#34;E &#183; -12.5, 130.8">
+        <button type="button" id="tm-goto-btn">Go</button>
+        <span id="tm-goto-msg" class="tm-goto-msg" role="status"></span>
+      </div>
+    </section>
+
+    <section class="tm-controls" aria-label="Filters">
+      <div class="tm-control-group">
+        <span class="tm-control-label">Months</span>
+        <div class="tm-months" id="tm-months"></div>
+        <div class="tm-month-presets">
+          <button type="button" id="tm-months-all">All</button>
+          <button type="button" id="tm-months-none">Clear</button>
+        </div>
+      </div>
+      <div class="tm-control-group tm-limit-group">
+        <label class="tm-control-label" for="tm-limit">Operational limit H<sub>s</sub> (m)</label>
+        <input type="number" id="tm-limit" min="0.25" max="15" step="0.25" value="2" inputmode="decimal">
+      </div>
+    </section>
+
+    <section id="tm-results" hidden>
+      <div class="tm-loc-line">
+        <div id="tm-loc"></div>
+        <div id="tm-basis" class="tm-basis"></div>
+      </div>
+      <div id="tm-context" class="tm-basis tm-context"></div>
+      <div id="tm-prevailing" class="tm-basis tm-context" hidden></div>
+      <div id="tm-extremes" class="tm-basis tm-context" hidden></div>
+      <div id="tm-wind" class="tm-basis tm-context" hidden></div>
+      <div id="tm-daylight" class="tm-basis tm-context" hidden></div>
+
+      <div class="tm-headline" id="tm-headline"></div>
+
+      <div class="tm-charts">
+        <figure class="tm-fig">
+          <figcaption>Chance of exceeding a given wave height</figcaption>
+          <div id="tm-curve" class="tm-chart"></div>
+        </figure>
+        <figure class="tm-fig">
+          <figcaption id="tm-bars-title">Time above limit, by month</figcaption>
+          <div id="tm-bars" class="tm-chart"></div>
+        </figure>
+      </div>
+
+      <div class="tm-charts tm-charts-b" id="tm-row2" hidden>
+        <figure class="tm-fig">
+          <figcaption id="tm-rose-title">Where waves come from</figcaption>
+          <div id="tm-rose" class="tm-chart tm-chart-rose"></div>
+        </figure>
+        <figure class="tm-fig" id="tm-vrose-fig" hidden>
+          <figcaption>Where wind comes from</figcaption>
+          <div id="tm-vrose" class="tm-chart tm-chart-rose"></div>
+        </figure>
+        <figure class="tm-fig">
+          <figcaption id="tm-tp-title">Typical peak period, by month</figcaption>
+          <div id="tm-tp" class="tm-chart"></div>
+          <p class="tm-fig-note" id="tm-tp-note" hidden>Share of time the dominant (peak)
+          wave period sits in each band. Two humps mean two seas: local wind waves and
+          longer swell taking turns. This is the dominant period over time, not a
+          spectral split of a single moment.</p>
+        </figure>
+      </div>
+
+      <div class="tm-charts tm-charts-c" id="tm-row3" hidden>
+        <figure class="tm-fig" id="tm-win-fig">
+          <figcaption id="tm-win-title">Weather windows, by month</figcaption>
+          <div class="tm-win-controls">Count spells with H<sub>s</sub> below
+            <select id="tm-win-thr" aria-label="Weather window wave height threshold"></select>
+            lasting at least
+            <select id="tm-win-dur" aria-label="Weather window minimum duration"></select>
+          </div>
+          <div id="tm-win-sum" class="tm-win-sum"></div>
+          <div id="tm-win" class="tm-chart"></div>
+          <p class="tm-fig-note">Long term averages. A spell is a continuous run below the
+          threshold; runs longer than 10 days are counted once.</p>
+        </figure>
+        <figure class="tm-fig" id="tm-cur-fig" hidden>
+          <figcaption>Current and tide at this point</figcaption>
+          <div id="tm-cur" class="tm-cur-lines"></div>
+          <p class="tm-fig-note">Tidal surface and seabed figures are derived from the
+          modelled water-column mean through a standard 1/7th power velocity profile at
+          this water depth; measured profiles vary. Slack-water durations refer to the
+          column mean. Background currents are model values at real depth levels.</p>
+        </figure>
+      </div>
+
+      <div class="tm-charts tm-charts-c tm-solo" id="tm-rowd" hidden>
+        <figure class="tm-fig">
+          <figcaption>Across the day</figcaption>
+          <div id="tm-di-sum" class="tm-win-sum"></div>
+          <div id="tm-di" class="tm-chart"></div>
+          <p class="tm-fig-note">Mean conditions by 3 hour slot of the local solar day, for
+          your selected months. Sea-breeze cycles are real near coasts and in the tropics;
+          open ocean swell barely follows the sun, and the chart says so when that is the
+          case here.</p>
+        </figure>
+      </div>
+
+      <div class="tm-charts tm-charts-c tm-solo" id="tm-row4" hidden>
+        <figure class="tm-fig" id="tm-cyc-fig">
+          <figcaption>Tropical cyclone exposure</figcaption>
+          <div class="tm-win-controls">Storm activity inside
+            <select id="tm-cyc-r" aria-label="Cyclone exposure distance"></select>
+            of this point</div>
+          <div id="tm-cyc-sum" class="tm-win-sum"></div>
+          <div id="tm-cyc" class="tm-chart"></div>
+          <p class="tm-fig-note" id="tm-cyc-note">Named storms at tropical-storm strength or
+          more, from best tracks since 1980. Operations commonly begin securing and
+          demobilising when a cyclone is inside 1,000 nm, long before local seas respond,
+          so this downtime is additional to the wave statistics above.</p>
+        </figure>
+      </div>
+
+      <div class="tm-charts tm-charts-c tm-solo" id="tm-rowe" hidden>
+        <figure class="tm-fig" id="tm-enso-fig">
+          <figcaption>El Ni&#241;o and La Ni&#241;a at this site</figcaption>
+          <div id="tm-enso-sum" class="tm-win-sum"></div>
+          <div class="tm-enso-wrap"><table class="tm-enso-table" id="tm-enso-table"></table></div>
+          <p class="tm-fig-note">History conditioned on the ENSO phase of each month
+          (NOAA's Oceanic Ni&#241;o Index). This is not a forecast: check the current
+          phase and seasonal outlook with NOAA or the Bureau of Meteorology, then read
+          the matching column. Differences of a few percent are within sampling noise.</p>
+        </figure>
+      </div>
+
+      <div class="tm-table-row">
+        <div class="tm-table-wrap">
+          <table class="tm-table" id="tm-table"></table>
+        </div>
+        <div class="tm-actions">
+          <button type="button" id="tm-pdf" class="tm-btn-primary">Download PDF summary</button>
+          <button type="button" id="tm-share" class="tm-btn-secondary">Copy link to this result</button>
+          <p class="tm-actions-note">One page summary of this location, ready to share. The link
+          reopens this exact view: location, months, limit and window settings.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tm-about" aria-label="About this tool">
+      <h2>What this tool tells you</h2>
+      <p>Every offshore job has a weather limit: a significant wave height (H<sub>s</sub>) above
+      which the vessel stands down, the crane stops, or the crew transfer is off. Sea State
+      Explorer shows how often the sea has historically been above that limit at your location,
+      for the months you care about, so you can gauge downtime risk before detailed planning
+      starts.</p>
+      <p>Around that headline number it builds a holistic first look at site conditions for
+      planning subsea and marine operations: typical wave period and the direction waves come
+      from, wind speeds (typical and top decile), the extreme sea states in the long term record,
+      and weather window counts showing how many calm spells of a workable length a typical
+      month gives you at your chosen limit.</p>
+      <p>The statistics come from the ERA5 global reanalysis (Copernicus Climate Change
+      Service), sampled every three hours across more than a decade. For each point the tool
+      counts how the sea and wind actually behaved in each calendar month. That long term
+      climate view smooths out individual storms and seasons, which is what early stage
+      planning needs.</p>
+      <p>Water depth at the clicked point and nearby offshore oil and gas infrastructure give
+      quick context for the site, and the one page PDF pulls the numbers, charts and disclaimer
+      together for sharing.</p>
+      <p>What it is not: a forecast, and not a substitute for a project specific metocean study.
+      The percentages describe past climate, and real operability also depends on spectral
+      detail, currents and tide, and the response of your vessel.</p>
+    </section>
+
+    <section class="tm-cta">
+      <h2>Planning marine operations?</h2>
+      <p>These statistics are a first look, not an engineering answer. Thrust Maritime provides
+      project specific metocean studies, weather window and workability analysis, and marine
+      engineering support.</p>
+      <p><a id="tm-cta-link" href="https://www.thrustm.com" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+    </section>
+
+    <footer class="tm-footer">
+      <p id="tm-disclaimer"></p>
+      <p id="tm-terms"></p>
+      <p id="tm-attribution"></p>
+    </footer>
+  </main>
+</div>
+
+<div class="tm-tip" id="tm-tip" hidden></div>
+
+<script src="coastline.js"></script>
+<script src="borders.js"></script>
+<script src="data.js"></script>
+<script src="map.js"></script>
+<script src="chart.js"></script>
+<script src="report.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

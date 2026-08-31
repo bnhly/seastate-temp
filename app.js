@@ -1,0 +1,1422 @@
+/* Sea State Explorer - application glue.
+   Provider selection (real tiles if data/manifest.json exists, demo otherwise),
+   month + limit controls, results rendering, PDF hand-off. */
+(function () {
+  "use strict";
+
+  var DEFAULTS = {
+    companyName: "Thrust Maritime",
+    website: "https://www.thrustm.com",
+    dataBase: "data/",
+    pdfLibSrc: "vendor/pdf-lib.min.js",
+    bathySrc: "bathy.js",
+    coastHdSrc: "coastline_hd.js",
+    pdfDelivery: "download",   /* "inline" in the sandboxed preview build */
+    limitDefault: 2,
+    disclaimerLive: "Values are long term climatological estimates for open water derived from " +
+      "reanalysis data. They are not forecasts, may underestimate extreme conditions including " +
+      "tropical cyclones, and are unreliable close to coastlines and in sheltered or shallow " +
+      "water. Not for design, navigation or operational decision making. No warranty is given.",
+    disclaimerDemo: "DEMONSTRATION MODE: every number shown is synthetic, generated from a " +
+      "simplified parametric model so the tool can be evaluated before the real dataset is " +
+      "built. Do not use these values for anything.",
+    termsNote: "Free to use for individual planning reference. Automated bulk extraction of " +
+      "the tool's data is not permitted; the underlying open datasets are available from the " +
+      "original providers credited below."
+  };
+
+  var cfg = {};
+  var k;
+  for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+  if (window.TM_CONFIG_OVERRIDES) {
+    for (k in window.TM_CONFIG_OVERRIDES) cfg[k] = window.TM_CONFIG_OVERRIDES[k];
+  }
+
+  var D = window.TMData;
+  var state = {
+    provider: null,
+    isDemo: true,
+    selected: null,        /* {lat, lon} clicked */
+    cellData: null,        /* provider query result */
+    monthsOn: [true, true, true, true, true, true, true, true, true, true, true, true],
+    limit: cfg.limitDefault,
+    map: null,
+    heatTimer: null,
+    bathyPromise: null,
+    bathyReady: false,
+    bathyFailed: false,
+    assetsData: null,
+    assetsAttribution: "",
+    depthExact: null,
+    depthAttribution: "",
+    lastDepth: null,
+    lastNearest: null,
+    curFetch: null,        /* {key, val} live currents tile lookup */
+    curAttribution: "",
+    cycFetch: null,        /* {key, val} live cyclone tile lookup */
+    cycAttribution: "",
+    cycR: null,            /* cyclone radius index; default = the widest ring */
+    winThr: null,          /* weather-window controls (indices) */
+    winDur: null,
+    pendingWin: null,      /* {thr, dur} values from a shared link, applied
+                              when the windows selects first populate */
+    lastHash: null,        /* last share fragment this app wrote itself */
+    lastExtremes: null,
+    lastWind: null,
+    lastWindows: null,
+    lastCur: null,
+    lastCyc: null,
+    lastDiurnal: null,
+    lastEnso: null,
+    lastTpMode: null,
+    lastDaylight: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function monthIdxList() {
+    var out = [], i;
+    for (i = 0; i < 12; i++) if (state.monthsOn[i]) out.push(i);
+    return out;
+  }
+
+  function monthsLabel() {
+    var sel = monthIdxList();
+    if (sel.length === 12) return "across the whole year";
+    if (sel.length === 0) return "(no months selected)";
+    return "in " + sel.map(function (m) { return D.MONTH_NAMES[m]; }).join(", ");
+  }
+
+  /* ---------- UI wiring ---------- */
+
+  function buildMonthChips() {
+    var box = $("tm-months"), i, b;
+    for (i = 0; i < 12; i++) {
+      b = document.createElement("button");
+      b.type = "button";
+      b.textContent = D.MONTH_NAMES[i];
+      b.setAttribute("aria-pressed", "true");
+      (function (idx, btn) {
+        btn.addEventListener("click", function () {
+          state.monthsOn[idx] = !state.monthsOn[idx];
+          btn.setAttribute("aria-pressed", state.monthsOn[idx] ? "true" : "false");
+          onFilterChange();
+        });
+      })(i, b);
+      box.appendChild(b);
+    }
+    $("tm-months-all").addEventListener("click", function () { setAllMonths(true); });
+    $("tm-months-none").addEventListener("click", function () { setAllMonths(false); });
+  }
+
+  function setAllMonths(on) {
+    var btns = $("tm-months").children, i;
+    for (i = 0; i < 12; i++) {
+      state.monthsOn[i] = on;
+      btns[i].setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    onFilterChange();
+  }
+
+  function onFilterChange() {
+    scheduleHeat();
+    renderResults();
+  }
+
+  function scheduleHeat() {
+    clearTimeout(state.heatTimer);
+    state.heatTimer = setTimeout(refreshHeat, 180);
+  }
+
+  function refreshHeat() {
+    var on = $("tm-shade").checked;
+    refreshLegend();
+    if (!on) { state.map.setHeatField(null); return; }
+    var sel = monthIdxList();
+    if (!sel.length) { state.map.setHeatField(null); return; }
+    state.provider.heatField(sel).then(function (fn) {
+      state.map.setHeatField(fn);
+    });
+  }
+
+  /* ---------- map layers: bathymetry + assets ---------- */
+
+  function ensureBathy() {
+    if (state.bathyPromise) return state.bathyPromise;
+    state.bathyPromise = new Promise(function (resolve, reject) {
+      if (window.TM_BATHY_ENC) { resolve(); return; }
+      var s2 = document.createElement("script");
+      s2.src = cfg.bathySrc;
+      s2.onload = function () { resolve(); };
+      s2.onerror = function () { reject(new Error("Depth data failed to load.")); };
+      document.head.appendChild(s2);
+    }).then(function () {
+      state.bathyReady = true;
+      return D.bathyLevels();
+    });
+    return state.bathyPromise;
+  }
+
+  /* High-detail coastline: fetched once, the first time the view zooms past
+     the HD threshold. On failure the 50m coastline simply stays. */
+  function ensureCoastHD() {
+    if (state.coastHDStarted) return;
+    state.coastHDStarted = true;
+    function apply() {
+      if (window.TM_COAST_HD_ENC) {
+        var rings = D.decodeDeltaRings(window.TM_COAST_HD_ENC);
+        window.TM_COAST_HD_ENC = null;
+        state.map.setCoastHD(rings);
+      }
+    }
+    if (window.TM_COAST_HD_ENC) { apply(); return; }
+    var s2 = document.createElement("script");
+    s2.src = cfg.coastHdSrc;
+    s2.onload = apply;
+    s2.onerror = function () {};
+    document.head.appendChild(s2);
+  }
+
+  function loadAssetsData() {
+    if (window.TM_ASSETS_DATA) return Promise.resolve(window.TM_ASSETS_DATA);
+    if (cfg.dataBase === null) return Promise.reject(new Error("no data base"));
+    return fetch(cfg.dataBase + "assets.json").then(function (r) {
+      if (!r.ok) throw new Error("assets " + r.status);
+      return r.json();
+    });
+  }
+
+  function assetsAreDemo() {
+    var d = state.assetsData, i;
+    if (!d) return false;
+    for (i = 0; i < d.sources.length; i++) if (d.sources[i].id === "demo") return true;
+    return false;
+  }
+
+  function refreshLegend() {
+    var el = $("tm-legend");
+    var parts = [];
+    if ($("tm-shade").checked && monthIdxList().length) {
+      parts.push('<span class="tm-lg-title">Mean H<sub>s</sub></span>' +
+        '<span class="tm-lg-bar"></span>' +
+        '<span class="tm-lg-scale"><span>0</span><span>6+ m</span></span>');
+    }
+    if ($("tm-contours").checked && state.bathyReady) {
+      parts.push('<span class="tm-lg-title">Depth</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:2px"></span>200 m</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:1px;opacity:.72"></span>1,000 m</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:1px;opacity:.45"></span>3,000 m</span>');
+    }
+    if (state.assetsData && $("tm-assets").checked) {
+      var rows = '<span class="tm-lg-title">Assets' + (assetsAreDemo() ? " (demo)" : "") + '</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-diamond"></span>Platform</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-dot"></span>Field</span>';
+      if (assetsHaveWells()) {
+        var wellHint = (state.map && state.map.wellsVisible()) ? "" : " (zoom in)";
+        rows += '<span class="tm-lg-row"><span class="tm-lg-dot" style="width:5px;height:5px"></span>Well' + wellHint + '</span>';
+      }
+      if (state.assetLines && state.assetLines.length && $("tm-f-pipes").checked) {
+        var pipeHint = (state.map && state.map.pipesVisible()) ? "" : " (zoom in)";
+        rows += '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:2px;border-top-color:#c2571f;opacity:.75"></span>Pipeline' + pipeHint + '</span>';
+      }
+      parts.push(rows);
+    }
+    if (state.cycTracksLoaded && $("tm-cyctracks").checked) {
+      parts.push('<span class="tm-lg-title">Cyclone tracks' + (state.isDemo ? " (demo)" : "") + '</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:2px;border-top-color:rgba(122,84,160,.65)"></span>Major (cat 3+)</span>' +
+        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:1px;border-top-color:rgba(122,84,160,.45)"></span>Weaker storms</span>');
+    }
+    el.hidden = parts.length === 0;
+    el.innerHTML = parts.join('<span class="tm-lg-gap"></span>');
+  }
+
+  function updateAttribution() {
+    var parts = [state.provider.meta.attribution,
+      "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain)."];
+    if (state.depthAttribution) parts.push(state.depthAttribution);
+    if (state.assetsAttribution) parts.push(state.assetsAttribution);
+    if (state.cycAttribution) parts.push(state.cycAttribution);
+    $("tm-attribution").textContent = parts.join(" ");
+  }
+
+  function assetsHaveWells() {
+    var d = state.assetsData, i;
+    if (!d) return false;
+    for (i = 0; i < d.assets.length; i++) if (d.assets[i].t === "well") return true;
+    return false;
+  }
+
+  function setBanner() {
+    var el = $("tm-banner");
+    el.hidden = false;
+    if (state.isDemo) {
+      el.className = "tm-banner";
+      el.textContent = "Demonstration data. The numbers below are synthetic placeholders so you " +
+        "can try the tool; the production version runs on ERA5 reanalysis statistics.";
+    } else {
+      el.className = "tm-banner tm-banner-live";
+      el.textContent = "Data: " + state.provider.meta.sourceLabel + ", " + state.provider.meta.period +
+        ". Long term statistics for open water; see the notes at the foot of the page.";
+    }
+    $("tm-disclaimer").textContent = (state.isDemo ? cfg.disclaimerDemo + " " : "") + cfg.disclaimerLive +
+      " Asset positions and depth bands are indicative, never for navigation." +
+      " For project specific metocean studies contact " + cfg.companyName + ".";
+    $("tm-terms").textContent = cfg.termsNote;
+    updateAttribution();
+  }
+
+  /* ---------- selection + results ---------- */
+
+  function onSelect(lat, lon) {
+    /* a stale manual-entry echo would misdescribe the new point */
+    $("tm-goto-msg").textContent = "";
+    state.selected = { lat: lat, lon: lon };
+    state.map.setSelection(lat, lon, null);
+    $("tm-hint").textContent = "Loading statistics...";
+    state.provider.query(lat, lon).then(function (res) {
+      state.cellData = res;
+      state.map.setSelection(lat, lon, { lat: res.cell.lat, lon: res.cell.lon, res: res.cell.res });
+      $("tm-hint").style.display = "none";
+      renderResults();
+      var results = $("tm-results");
+      if (results.dataset.scrolled !== "1") {
+        results.dataset.scrolled = "1";
+        results.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }).catch(function (err) {
+      state.cellData = null;
+      $("tm-hint").style.display = "";
+      $("tm-hint").textContent = (err && err.message) ? err.message : "No data near that point.";
+      $("tm-results").hidden = true;
+    });
+  }
+
+  function fmtLimitPct(lim) {
+    var s2 = D.fmtPct(lim.p);
+    if (lim.floor && s2.charAt(0) !== "<") s2 = "<" + s2;
+    return s2.replace("<", "< ");
+  }
+
+  function limitValue() {
+    var v = parseFloat($("tm-limit").value);
+    if (isNaN(v) || v <= 0) v = cfg.limitDefault;
+    return Math.min(15, Math.max(0.25, v));
+  }
+
+  function renderResults() {
+    if (!state.cellData) return;
+    state.limit = limitValue();
+    var res = state.cellData;
+    var sel = monthIdxList();
+    var results = $("tm-results");
+    results.hidden = false;
+
+    var combined = D.combineMonths(res, sel, state.provider.thresholds);
+    var lim = D.interpExceedance(state.provider.thresholds, combined.p, state.limit);
+
+    /* location + basis lines */
+    $("tm-loc").textContent = "Location " + D.fmtLatLon(state.selected.lat, state.selected.lon);
+    var basis = "Data point " + D.fmtLatLon(res.cell.lat, res.cell.lon) +
+      " (" + res.cell.res + "\u00B0 grid), " + res.distanceKm + " km from your click \u00B7 " +
+      state.provider.meta.sourceLabel + ", " + state.provider.meta.period;
+    if (combined.nTotal > 0) basis += " \u00B7 " + combined.nTotal.toLocaleString() + " samples";
+    $("tm-basis").textContent = basis;
+
+    /* depth + nearest asset context line: exact ETOPO depth when deployed,
+       Natural Earth band as the fallback */
+    var ctxParts = [];
+    var cellKey = res.cell.lat + "," + res.cell.lon;
+    var depthTxt = null;
+    if (state.depthExact && state.depthExact.key === cellKey) {
+      if (state.depthExact.val) {
+        /* trim any trailing parenthetical so the inline mention does not nest
+           brackets; the footer attribution keeps the full wording */
+        var dsl = state.depthExact.val.sourceLabel.replace(/\s*\([^)]*\)\s*$/, "");
+        depthTxt = "about " + state.depthExact.val.m.toLocaleString() + " m (" + dsl + ")";
+      }
+    } else if (cfg.dataBase !== null) {
+      state.depthExact = { key: cellKey, val: null };
+      D.depthExactAt(cfg.dataBase, res.cell.lat, res.cell.lon).then(function (v) {
+        state.depthExact = { key: cellKey, val: v };
+        if (v && v.attribution && !state.depthAttribution) {
+          state.depthAttribution = v.attribution;
+          updateAttribution();
+        }
+        if (v && state.cellData) renderResults();
+      });
+    }
+    if (!depthTxt) {
+      var band = D.depthBandAt(res.cell.lat, res.cell.lon);
+      if (band) {
+        depthTxt = (band.label.indexOf(" to ") > 0 ? "roughly " : "") + band.label +
+          " (Natural Earth bathymetry)";
+      } else if (!state.bathyFailed) {
+        ensureBathy().then(function () {
+          if (state.cellData) renderResults();
+        }).catch(function () { state.bathyFailed = true; });
+      }
+    }
+    state.lastDepth = depthTxt;
+    if (depthTxt) ctxParts.push("Water depth at data point: " + depthTxt);
+    state.lastNearest = null;
+    if (state.assetsData) {
+      var near = D.nearestAsset(state.assetsData.assets, res.cell.lat, res.cell.lon, 400);
+      if (near) {
+        state.lastNearest = near.asset.n + " (" + (near.asset.t || "asset") +
+          (near.asset.d ? ", ~" + near.asset.d.toLocaleString() + " m water" : "") + "), " +
+          near.km + " km away";
+        ctxParts.push("Nearest mapped asset: " + state.lastNearest);
+      }
+    }
+    $("tm-context").textContent = ctxParts.join("  \u00B7  ");
+
+    /* prevailing conditions: typical peak period + modal wave direction.
+       Hidden when the loaded tiles carry no period/direction fields. */
+    var prevEl = $("tm-prevailing");
+    var prev = D.prevailing(res, combined.usedMonths.length ? combined.usedMonths : sel);
+    state.lastPrevailing = null;
+    prevEl.hidden = true;
+    if (prev && sel.length) {
+      var bits = [];
+      if (prev.dirName) {
+        bits.push("waves most often from the " + prev.dirName +
+          (prev.dirPct ? " (about " + Math.round(prev.dirPct) + "% of the time)" : ""));
+      }
+      if (prev.tp !== null) bits.push("typical peak period " + prev.tp.toFixed(1) + " s");
+      if (bits.length) {
+        state.lastPrevailing = bits.join(", ");
+        prevEl.hidden = false;
+        prevEl.innerHTML = "";
+        prevEl.appendChild(document.createTextNode("Prevailing conditions " + monthsLabel() + ": "));
+        if (prev.dirDeg !== null) {
+          var arrow = document.createElement("span");
+          arrow.className = "tm-dir-arrow";
+          arrow.textContent = "\u2192";
+          /* dirDeg is where waves come FROM; the arrow shows travel direction */
+          arrow.style.transform = "rotate(" + (prev.dirDeg + 90) + "deg)";
+          prevEl.appendChild(arrow);
+          prevEl.appendChild(document.createTextNode(" "));
+        }
+        prevEl.appendChild(document.createTextNode(state.lastPrevailing + "."));
+      }
+    }
+
+    /* extreme sea states: annual percentile levels + the statistically
+       roughest calendar month. Site facts, independent of the selection. */
+    var extEl = $("tm-extremes");
+    var ext = D.extremesSummary(res, sel);
+    state.lastExtremes = null;
+    extEl.hidden = true;
+    if (ext) {
+      var eb = [];
+      if (ext.allP99 !== null) {
+        eb.push("1 sea state in 100 here is above " + ext.allP99.toFixed(1) + " m" +
+          (ext.allP999 !== null ? " and 1 in 1000 above " + ext.allP999.toFixed(1) + " m" : "") +
+          " (3 hour samples, all year)");
+      }
+      if (ext.roughMonth !== null) {
+        eb.push("statistically the roughest month is " + D.MONTH_NAMES[ext.roughMonth] +
+          ", when the top 1% of seas reach " + ext.roughP99.toFixed(1) + " m");
+      }
+      if (eb.length) {
+        state.lastExtremes = "Extreme seas: " + eb.join("; ") + ".";
+        extEl.hidden = false;
+        extEl.textContent = state.lastExtremes;
+      }
+    }
+
+    /* wind over the selected months */
+    var windEl = $("tm-wind");
+    var wndMonths = combined.usedMonths.length ? combined.usedMonths : sel;
+    var wnd = D.windSummary(res, wndMonths);
+    var wrose = sel.length ? D.aggregateRose(res.windRose, wndMonths) : null;
+    state.lastWind = null;
+    windEl.hidden = true;
+    if (wnd && sel.length && (wnd.mean !== null || wnd.p90 !== null)) {
+      var wb = [];
+      if (wnd.mean !== null) {
+        wb.push("typically " + wnd.mean.toFixed(1) + " m/s (" + Math.round(wnd.mean * 1.94384) + " kn)");
+      }
+      if (wnd.p90 !== null) {
+        wb.push("top 10% above " + wnd.p90.toFixed(1) + " m/s (" + Math.round(wnd.p90 * 1.94384) + " kn)");
+      }
+      if (wrose) {
+        wb.push("most often from the " + wrose.dirName + " (" + Math.round(wrose.dirPct) + "%)");
+      }
+      state.lastWind = "Wind (10 m) " + monthsLabel() + ": " + wb.join(", ") + ".";
+      windEl.hidden = false;
+      windEl.textContent = state.lastWind;
+    }
+
+    /* daylight: pure solar geometry at the clicked latitude */
+    var dlEl = $("tm-daylight");
+    state.lastDaylight = null;
+    dlEl.hidden = true;
+    if (sel.length) {
+      var dl = D.daylightMonths(state.selected.lat);
+      var loM = sel[0], hiM = sel[0], i5;
+      for (i5 = 1; i5 < sel.length; i5++) {
+        if (dl[sel[i5]].hours < dl[loM].hours) loM = sel[i5];
+        if (dl[sel[i5]].hours > dl[hiM].hours) hiM = sel[i5];
+      }
+      var line;
+      if (dl[hiM].hours >= 24 || dl[loM].hours <= 0) {
+        line = "Daylight " + monthsLabel() + ": ranges from " + dl[loM].hours.toFixed(1) +
+          " h (" + D.MONTH_NAMES[loM] + ") to " + dl[hiM].hours.toFixed(1) + " h (" +
+          D.MONTH_NAMES[hiM] + "), including polar " +
+          (dl[loM].hours <= 0 ? "night" : "day") + " conditions.";
+      } else if (loM === hiM) {
+        line = "Daylight in " + D.MONTH_NAMES[loM] + ": " + dl[loM].hours.toFixed(1) +
+          " h, sun up about " + D.fmtSolarTime(dl[loM].rise) + " to " +
+          D.fmtSolarTime(dl[loM].set) + " local solar time; " +
+          (24 - dl[loM].hours).toFixed(1) + " h of darkness.";
+      } else {
+        line = "Daylight " + monthsLabel() + ": " + dl[hiM].hours.toFixed(1) + " h in " +
+          D.MONTH_NAMES[hiM] + " (about " + D.fmtSolarTime(dl[hiM].rise) + " to " +
+          D.fmtSolarTime(dl[hiM].set) + ") down to " + dl[loM].hours.toFixed(1) + " h in " +
+          D.MONTH_NAMES[loM] + " (" + D.fmtSolarTime(dl[loM].rise) + " to " +
+          D.fmtSolarTime(dl[loM].set) + "), local solar time.";
+      }
+      state.lastDaylight = line;
+      dlEl.hidden = false;
+      dlEl.textContent = line;
+    }
+
+    /* headline */
+    var head = $("tm-headline");
+    head.innerHTML = "";
+    var big = document.createElement("span");
+    big.className = "tm-big";
+    var sub = document.createElement("span");
+    sub.className = "tm-big-sub";
+    if (lim.p === null || sel.length === 0) {
+      big.textContent = "n/a";
+      sub.textContent = sel.length === 0 ? "Select at least one month." : "No data for the selected months at this location.";
+    } else {
+      big.textContent = fmtLimitPct(lim);
+      sub.textContent = "of the time, significant wave height exceeds " + state.limit +
+        " m at this location " + monthsLabel() + ". That is roughly " +
+        (lim.p * 0.3044).toFixed(lim.p * 0.3044 < 3 ? 1 : 0) + " days per month on average.";
+    }
+    head.appendChild(big);
+    head.appendChild(sub);
+
+    /* charts */
+    window.TMCharts.renderCurve($("tm-curve"), {
+      thresholds: state.provider.thresholds,
+      p: combined.p,
+      limit: state.limit,
+      interp: function (h) { return D.interpExceedance(state.provider.thresholds, combined.p, h); }
+    });
+
+    var monthly = [], m, one;
+    for (m = 0; m < 12; m++) {
+      if (res.n[m] > 0 && res.exc[m][0] !== null) {
+        one = D.interpExceedance(state.provider.thresholds, res.exc[m], state.limit);
+        monthly.push(one.p === null ? null : Math.round(one.p * 10) / 10);
+      } else {
+        monthly.push(null);
+      }
+    }
+    $("tm-bars-title").textContent = "Time above " + state.limit + " m, by month";
+    window.TMCharts.renderBars($("tm-bars"), {
+      values: monthly,
+      selected: state.monthsOn.slice(),
+      limit: state.limit,
+      monthNames: D.MONTH_NAMES
+    });
+
+    /* prevailing-conditions row: wave rose + typical peak period by month.
+       Hidden entirely when the loaded data carries neither field. */
+    var row2 = $("tm-row2");
+    var hasTp = false, hasRose = !!(prev && prev.rose);
+    if (res.tp) {
+      for (m = 0; m < 12; m++) if (res.tp[m] !== null && res.tp[m] !== undefined) { hasTp = true; break; }
+    }
+    var tpAgg = sel.length ? D.tpHistAgg(res, sel) : null;
+    state.lastTpMode = null;
+    row2.hidden = !(hasTp || hasRose || wrose || tpAgg);
+    row2.classList.toggle("tm-has-vrose", !!wrose);
+    $("tm-vrose-fig").hidden = !wrose;
+    if (!row2.hidden) {
+      $("tm-rose-title").textContent = "Where waves come from " + monthsLabel();
+      window.TMCharts.renderRose($("tm-rose"), {
+        rose: hasRose ? prev.rose : null,
+        names: function (deg) { return D.compassName ? D.compassName(deg) : deg + " deg"; }
+      });
+      if (wrose) {
+        window.TMCharts.renderRose($("tm-vrose"), {
+          rose: wrose.rose,
+          what: "wind",
+          names: function (deg) { return D.compassName ? D.compassName(deg) : deg + " deg"; }
+        });
+      }
+      if (tpAgg) {
+        /* the distribution replaced the monthly-median line (Ben, 30 Aug
+           26): a median hides the sea/swell split, the histogram shows it.
+           Old tile sets without the field fall back to the median chart. */
+        $("tm-tp-title").textContent = "Peak period, % of time in each band " + monthsLabel();
+        $("tm-tp-note").hidden = false;
+        window.TMCharts.renderTpHist($("tm-tp"), tpAgg);
+        var moLo = tpAgg.t0 + tpAgg.modeIdx * tpAgg.step;
+        state.lastTpMode = "Peak period " + monthsLabel() + ": most often " + moLo + "-" +
+          (moLo + tpAgg.step) + " s (" + Math.round(tpAgg.modePct) + "% of the time).";
+      } else {
+        $("tm-tp-title").textContent = "Typical peak period, by month";
+        $("tm-tp-note").hidden = true;
+        window.TMCharts.renderTpMonths($("tm-tp"), {
+          values: res.tp || [null, null, null, null, null, null, null, null, null, null, null, null],
+          selected: state.monthsOn.slice(),
+          monthNames: D.MONTH_NAMES
+        });
+      }
+    }
+
+    /* holistic row: weather windows + current and tide. The currents value
+       comes embedded in demo results, or from the optional cur/ tile set
+       (fetched once per cell, re-render when it lands). */
+    var curVal = null;
+    if (res.cur) {
+      curVal = res.cur;
+    } else if (state.curFetch && state.curFetch.key === cellKey) {
+      curVal = state.curFetch.val;
+    } else if (cfg.dataBase !== null) {
+      state.curFetch = { key: cellKey, val: null };
+      D.curAt(cfg.dataBase, res.cell.lat, res.cell.lon).then(function (v) {
+        state.curFetch = { key: cellKey, val: v };
+        if (v && v.attribution && state.curAttribution !== v.attribution) {
+          state.curAttribution = v.attribution;
+          updateAttribution();
+        }
+        if (v && state.cellData) renderResults();
+      });
+    }
+    var curSum = curVal ? D.curSummary(curVal, sel.length ? sel : monthIdxList()) : null;
+    var haveWin = !!(res.windows && res.windows.runs);
+    var row3 = $("tm-row3");
+    row3.hidden = !(haveWin || curSum);
+    $("tm-win-fig").hidden = !haveWin;
+    $("tm-cur-fig").hidden = !curSum;
+    row3.classList.toggle("tm-solo", !(haveWin && curSum));
+    state.lastWindows = null;
+    state.lastCur = null;
+    if (haveWin) renderWindowsPanel(res, sel);
+    if (curSum) {
+      var siteDepth = (state.depthExact && state.depthExact.key === cellKey &&
+        state.depthExact.val) ? state.depthExact.val.m : null;
+      renderCurPanel(curSum, siteDepth);
+    }
+
+    /* tropical cyclone exposure: embedded in demo results, fetched from the
+       optional cyc/ tile set on live data */
+    var cycVal = null;
+    if (res.cyc) {
+      cycVal = res.cyc;
+    } else if (state.cycFetch && state.cycFetch.key === cellKey) {
+      cycVal = state.cycFetch.val;
+    } else if (cfg.dataBase !== null) {
+      state.cycFetch = { key: cellKey, val: null };
+      D.cycAt(cfg.dataBase, res.cell.lat, res.cell.lon).then(function (v) {
+        state.cycFetch = { key: cellKey, val: v };
+        if (v && v.attribution && state.cycAttribution !== v.attribution) {
+          state.cycAttribution = v.attribution;
+          updateAttribution();
+        }
+        if (v && !v.none && state.cellData) renderResults();
+      });
+    }
+    state.lastCyc = null;
+    var row4 = $("tm-row4");
+    row4.hidden = !(cycVal && !cycVal.none);
+    if (!row4.hidden) renderCycPanel(cycVal, sel);
+
+    /* El Nino / La Nina phase display: PARKED (Ben, 30 Aug 26). The
+       three-column table read as homework; the datasets keep accumulating
+       and shipping the phase fields on every build, so flipping SHOW_ENSO
+       brings it straight back - ideally rebuilt as the scenario switch
+       described in the README ("ENSO panel parked"). */
+    state.lastEnso = null;
+    if (SHOW_ENSO) {
+      var ensoW = sel.length ? D.ensoSummary(res, sel, state.provider.thresholds, state.limit) : null;
+      var ensoC = null;
+      if (cycVal && !cycVal.none && cycVal.enso && sel.length) {
+        var riE = Math.min(state.cycR === null ? cycVal.radii.length - 1 : state.cycR,
+          cycVal.radii.length - 1);
+        ensoC = D.cycEnsoSummary(cycVal, sel, riE);
+      }
+      renderEnsoPanel(ensoW, ensoC,
+        (cycVal && !cycVal.none) ? cycVal.radii : null);
+    } else {
+      $("tm-rowe").hidden = true;
+    }
+
+    /* across the day: local-solar diurnal cycle of Hs and wind */
+    var di = D.diurnalSummary(res, sel.length ? sel : monthIdxList());
+    state.lastDiurnal = null;
+    var rowd = $("tm-rowd");
+    rowd.hidden = !di;
+    if (di) renderDiurnalPanel(di, sel.length ? sel : monthIdxList());
+
+    /* table */
+    var tbl = $("tm-table");
+    var html = "<thead><tr><th>H<sub>s</sub> threshold</th><th>% of time above</th><th>approx days per month</th></tr></thead><tbody>";
+    var i, pv, cls;
+    for (i = 0; i < state.provider.thresholds.length; i++) {
+      pv = combined.p[i];
+      cls = Math.abs(state.provider.thresholds[i] - state.limit) < 0.001 ? " class=\"tm-row-limit\"" : "";
+      html += "<tr" + cls + "><td>" + state.provider.thresholds[i].toFixed(1) + " m</td>";
+      if (pv === null) {
+        html += "<td>no data</td><td>-</td>";
+      } else {
+        html += "<td>" + D.fmtPct(pv).replace("<", "&lt;") + "</td>" +
+          "<td>" + (pv * 0.3044).toFixed(pv * 0.3044 < 3 ? 1 : 0) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody>";
+    tbl.innerHTML = html;
+
+    $("tm-pdf").disabled = (lim.p === null || sel.length === 0);
+    state.lastCombined = combined;
+    state.lastLimitP = lim;
+    state.lastMonthly = monthly;
+    writeUrlState();
+  }
+
+  /* ---------- weather-window + current/tide panels ---------- */
+
+  function renderWindowsPanel(res, sel) {
+    var w = res.windows;
+    var selT = $("tm-win-thr"), selD = $("tm-win-dur"), i, o;
+    if (!selT.options.length) {
+      for (i = 0; i < w.thr.length; i++) {
+        o = document.createElement("option");
+        o.value = String(i);
+        o.textContent = w.thr[i].toFixed(1) + " m";
+        selT.appendChild(o);
+      }
+      for (i = 0; i < w.edges.length; i++) {
+        o = document.createElement("option");
+        o.value = String(i);
+        o.textContent = w.edges[i] + " h";
+        selD.appendChild(o);
+      }
+      /* defaults: threshold nearest the operational limit, 24 h duration */
+      var bi = 0;
+      for (i = 1; i < w.thr.length; i++) {
+        if (Math.abs(w.thr[i] - state.limit) < Math.abs(w.thr[bi] - state.limit)) bi = i;
+      }
+      state.winThr = bi;
+      var di = -1;
+      for (i = 0; i < w.edges.length; i++) if (w.edges[i] === 24) di = i;
+      state.winDur = di >= 0 ? di : 0;
+      selT.value = String(state.winThr);
+      selD.value = String(state.winDur);
+    }
+    if (state.winThr === null) state.winThr = 0;
+    if (state.winDur === null) state.winDur = 0;
+    if (state.pendingWin) {
+      var pv = state.pendingWin;
+      state.pendingWin = null;
+      if (pv.thr !== null) {
+        var bt = 0;
+        for (i = 1; i < w.thr.length; i++) {
+          if (Math.abs(w.thr[i] - pv.thr) < Math.abs(w.thr[bt] - pv.thr)) bt = i;
+        }
+        state.winThr = bt;
+      }
+      if (pv.dur !== null) {
+        var bd = 0;
+        for (i = 1; i < w.edges.length; i++) {
+          if (Math.abs(w.edges[i] - pv.dur) < Math.abs(w.edges[bd] - pv.dur)) bd = i;
+        }
+        state.winDur = bd;
+      }
+      selT.value = String(state.winThr);
+      selD.value = String(state.winDur);
+    }
+    var thr = w.thr[state.winThr], dur = w.edges[state.winDur];
+    var vals = D.windowsPerMonth(res, state.winThr, state.winDur);
+    window.TMCharts.renderWindows($("tm-win"), {
+      values: vals,
+      selected: state.monthsOn.slice(),
+      monthNames: D.MONTH_NAMES,
+      thr: thr, dur: dur
+    });
+    var sum = 0, any = false;
+    for (i = 0; i < sel.length; i++) {
+      if (vals[sel[i]] !== null) { sum += vals[sel[i]]; any = true; }
+    }
+    var sumEl = $("tm-win-sum");
+    if (any && sel.length) {
+      var nTxt = sum >= 10 ? String(Math.round(sum)) : (Math.round(sum * 10) / 10).toString();
+      state.lastWindows = "Weather windows " + monthsLabel() + ": a typical year gives about " +
+        nTxt + " spell" + (sum === 1 ? "" : "s") + " of " + dur + " h or more below " + thr + " m.";
+      sumEl.textContent = state.lastWindows;
+    } else {
+      sumEl.textContent = "";
+    }
+  }
+
+  function fmtSpeed(ms) {
+    return ms.toFixed(2).replace(/0$/, "") + " m/s (" + (ms * 1.94384).toFixed(1) + " kn)";
+  }
+
+  function renderCurPanel(cs, depthM) {
+    var box = $("tm-cur");
+    box.innerHTML = "";
+    var lines = [];
+    if (cs.tide) {
+      var t = cs.tide, chr;
+      if (t.form === null) chr = null;
+      else if (t.form < 0.25) chr = "semidiurnal: it peaks roughly every 6.2 hours";
+      else if (t.form <= 1.5) chr = "mixed, mainly semidiurnal: peaks roughly every 6 hours, alternating stronger and weaker";
+      else chr = "diurnal: it peaks roughly every 12.4 hours";
+      if (t.spring !== null) {
+        /* the source statistic is the depth-mean (barotropic) stream, but
+           people work at the surface or at the bed, so both are shown via
+           the standard 1/7th power profile: surface = 8/7 x mean, bottom
+           metre = surface x (1/depth)^(1/7) at the site depth */
+        var sf = 8 / 7;
+        var bf = (depthM && depthM > 2) ? sf * Math.pow(1 / depthM, 1 / 7) : null;
+        lines.push("Tidal stream at the surface: typical peak about " + fmtSpeed(t.spring * sf) +
+          " at springs, " + (t.neap !== null ? fmtSpeed(t.neap * sf) : "less") + " at neaps" +
+          (chr ? ". The tide here is " + chr + "." : "."));
+        lines.push(bf !== null
+          ? "Near the seabed (bottom metre, at ~" + Math.round(depthM).toLocaleString() +
+            " m depth): about " + fmtSpeed(t.spring * bf) + " at springs, " +
+            (t.neap !== null ? fmtSpeed(t.neap * bf) : "less") + " at neaps."
+          : "Near the seabed expect roughly two thirds of the surface stream.");
+      }
+      if (t.slack50 !== null && t.spring !== null && t.spring > 0.5) {
+        lines.push(t.slack50 === 0
+          ? "The stream rotates rather than stopping: there is no true slack window at the turn of the tide."
+          : "Around each turn of the tide the stream stays below 0.5 m/s (1 kn) for about " + Math.round(t.slack50) +
+            " min" + (t.slack25 !== null && t.slack25 > 0 ? " (below 0.25 m/s for about " + Math.round(t.slack25) + " min)" : "") + ".");
+      } else if (t.spring !== null && t.spring <= 0.5) {
+        lines.push("The tidal stream rarely exceeds 0.5 m/s (1 kn) here even at peak.");
+      }
+      if (t.perDay !== null && t.perDay >= 1 && t.spring !== null && t.spring > 0.25) {
+        lines.push("Expect about " + Math.round(t.perDay) + " slack periods per day.");
+      }
+    }
+    if (cs.bg) {
+      var b = cs.bg, bb = [];
+      if (b.surfP50 !== null) {
+        bb.push("typically " + fmtSpeed(b.surfP50) + " at the surface" +
+          (b.surfP90 !== null ? ", top decile " + fmtSpeed(b.surfP90) : ""));
+      }
+      if (b.botP50 !== null) {
+        bb.push("near the seabed" + (b.botDepth ? " (about " + Math.round(b.botDepth) + " m)" : "") +
+          " typically " + fmtSpeed(b.botP50) +
+          (b.botP90 !== null ? ", top decile " + fmtSpeed(b.botP90) : ""));
+      }
+      if (bb.length) {
+        lines.push("Background (non tidal) current " + monthsLabel() + ": " + bb.join("; ") + ".");
+      }
+    }
+    var i, p;
+    for (i = 0; i < lines.length; i++) {
+      p = document.createElement("p");
+      p.textContent = lines[i];
+      box.appendChild(p);
+    }
+    state.lastCur = lines.length ? lines : null;
+  }
+
+  /* ---------- shareable URLs ----------
+     Every result state gets a link that reproduces it: location, months,
+     operational limit and the weather-window pickers, carried in the URL
+     hash (#loc=57.00,3.00&m=5,6,7,8&h=1.5&wt=1.5&wd=24). The hash form
+     survives static hosting, the Wix iframe and the single-file preview;
+     ?loc=... query links are accepted on read too. */
+
+  function buildShareString() {
+    if (!state.selected) return null;
+    var parts = ["loc=" + state.selected.lat.toFixed(2) + "," + state.selected.lon.toFixed(2)];
+    var sel = monthIdxList();
+    if (sel.length && sel.length < 12) {
+      parts.push("m=" + sel.map(function (m) { return m + 1; }).join(","));
+    }
+    if (state.limit !== cfg.limitDefault) parts.push("h=" + state.limit);
+    var res = state.cellData;
+    if (res && res.windows && state.winThr !== null && state.winDur !== null) {
+      parts.push("wt=" + res.windows.thr[state.winThr]);
+      parts.push("wd=" + res.windows.edges[state.winDur]);
+    }
+    return parts.join("&");
+  }
+
+  function shareUrl() {
+    var s = buildShareString();
+    if (!s) return null;
+    return window.location.origin === "null" || window.location.protocol === "file:"
+      ? window.location.href.split("#")[0] + "#" + s
+      : window.location.origin + window.location.pathname + "#" + s;
+  }
+
+  function writeUrlState() {
+    var s = buildShareString();
+    if (!s || s === state.lastHash) return;
+    state.lastHash = s;
+    try {
+      window.history.replaceState(null, "", "#" + s);
+    } catch (e) {
+      /* very old browsers / odd embeds: the link button still works */
+    }
+  }
+
+  function parseShareState() {
+    var raw = window.location.hash ? window.location.hash.slice(1) : window.location.search.slice(1);
+    if (!raw || raw.indexOf("loc=") < 0) return null;
+    var kv = {}, parts = raw.split("&"), i, p;
+    for (i = 0; i < parts.length; i++) {
+      p = parts[i].split("=");
+      if (p.length === 2) kv[decodeURIComponent(p[0])] = decodeURIComponent(p[1]);
+    }
+    if (!kv.loc) return null;
+    var ll = kv.loc.split(",");
+    var lat = parseFloat(ll[0]), lon = parseFloat(ll[1]);
+    if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    var out = { lat: lat, lon: lon, months: null, limit: null, wt: null, wd: null };
+    if (kv.m) {
+      var flags = [false, false, false, false, false, false, false, false, false, false, false, false];
+      var any = false, ms = kv.m.split(","), mi, mv;
+      for (mi = 0; mi < ms.length; mi++) {
+        mv = parseInt(ms[mi], 10);
+        if (mv >= 1 && mv <= 12) { flags[mv - 1] = true; any = true; }
+      }
+      if (any) out.months = flags;
+    }
+    if (kv.h) {
+      var h = parseFloat(kv.h);
+      if (!isNaN(h) && h > 0) out.limit = Math.min(15, Math.max(0.25, h));
+    }
+    if (kv.wt) { var wt = parseFloat(kv.wt); if (!isNaN(wt)) out.wt = wt; }
+    if (kv.wd) { var wd = parseInt(kv.wd, 10); if (!isNaN(wd)) out.wd = wd; }
+    return out;
+  }
+
+  function setMonths(flags) {
+    var btns = $("tm-months").children, i;
+    for (i = 0; i < 12; i++) {
+      state.monthsOn[i] = !!flags[i];
+      btns[i].setAttribute("aria-pressed", flags[i] ? "true" : "false");
+    }
+  }
+
+  function applyShareState(st) {
+    if (st.months) setMonths(st.months);
+    if (st.limit !== null) $("tm-limit").value = String(st.limit);
+    if (st.wt !== null || st.wd !== null) state.pendingWin = { thr: st.wt, dur: st.wd };
+    scheduleHeat();
+    var scale = Math.max(state.map.minScale || 3, state.map.cssW / 60);
+    state.map.centreOn(st.lat, st.lon, scale);
+    onSelect(st.lat, st.lon);
+  }
+
+  function copyShareLink() {
+    var url = shareUrl();
+    if (!url) return;
+    var btn = $("tm-share");
+    function done(ok) {
+      var old = "Copy link to this result";
+      btn.textContent = ok ? "Link copied" : "Copy failed: " + url;
+      setTimeout(function () { btn.textContent = old; }, 1800);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { done(true); }, function () { fallback(); });
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = url;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      done(ok);
+    }
+  }
+
+  /* ---------- ENSO phase panel (parked; see renderResults) ---------- */
+
+  var SHOW_ENSO = false;
+  var ENSO_LABELS = ["El Niño", "Neutral", "La Niña"];
+
+  function renderEnsoPanel(w, c, radii) {
+    var row = $("tm-rowe");
+    if (!w && !c) { row.hidden = true; return; }
+    row.hidden = false;
+
+    function tr(label, vals, fmt) {
+      var best = -1, i, h;
+      for (i = 0; i < 3; i++) {
+        if (vals[i] !== null && (best < 0 || vals[i] > vals[best])) best = i;
+      }
+      h = "<tr><td>" + label + "</td>";
+      for (i = 0; i < 3; i++) {
+        h += "<td" + (i === best ? ' class="tm-enso-hi"' : "") + ">" +
+          (vals[i] === null ? "-" : fmt(vals[i])) + "</td>";
+      }
+      return h + "</tr>";
+    }
+
+    var html = "<thead><tr><th></th><th>" + ENSO_LABELS.join("</th><th>") +
+      "</th></tr></thead><tbody>";
+    var radLabel = "";
+    if (w) {
+      html += tr("Time above " + state.limit + " m",
+        [w[0].pct, w[1].pct, w[2].pct], function (v) { return v.toFixed(1) + "%"; });
+      html += tr("Mean H<sub>s</sub>",
+        [w[0].mean, w[1].mean, w[2].mean], function (v) { return v.toFixed(2) + " m"; });
+    }
+    if (c && radii) {
+      var riE2 = Math.min(state.cycR === null ? radii.length - 1 : state.cycR, radii.length - 1);
+      radLabel = radii[riE2].toLocaleString() + " nm";
+      html += tr("Cyclone storm-days (within " + radLabel + ")",
+        [c[0].days, c[1].days, c[2].days], function (v) { return String(v); });
+    }
+    var src = w || c;
+    html += "<tr><td>Seasons in record</td><td>" + src[0].years + "</td><td>" +
+      src[1].years + "</td><td>" + src[2].years + "</td></tr></tbody>";
+    $("tm-enso-table").innerHTML = html;
+
+    /* headline: name the rougher phase only when the gap is worth acting on */
+    var sum = "";
+    if (w && w[0].pct !== null && w[2].pct !== null) {
+      var hi = w[2].pct >= w[0].pct ? 2 : 0, lo = 2 - hi;
+      var rel = Math.round(100 * (w[hi].pct - w[lo].pct) / Math.max(w[lo].pct, 0.1));
+      if (rel >= 10 && (w[hi].pct - w[lo].pct) >= 1) {
+        sum = ENSO_LABELS[hi] + " months run rougher here " + monthsLabel() + ": " +
+          w[hi].pct.toFixed(1) + "% of the time above " + state.limit + " m, against " +
+          w[lo].pct.toFixed(1) + "% in " + ENSO_LABELS[lo] + " months.";
+      } else {
+        sum = "Little ENSO signal in the wave climate here " + monthsLabel() + ".";
+      }
+    }
+    if (c && c[0].days !== null && c[2].days !== null && (c[0].days + c[2].days) > 0) {
+      var chi = c[2].days >= c[0].days ? 2 : 0, clo = 2 - chi;
+      sum += (sum ? " " : "") + "Cyclone exposure: " + c[chi].days +
+        " storm-days across these months in a " + ENSO_LABELS[chi] + " year, against " +
+        c[clo].days + " in " + ENSO_LABELS[clo] +
+        (radLabel ? " (within " + radLabel + ")." : ".");
+    }
+    $("tm-enso-sum").textContent = sum;
+    state.lastEnso = sum || null;
+  }
+
+  function renderCycPanel(cyc, sel) {
+    var selR = $("tm-cyc-r"), i, o;
+    if (!selR.options.length) {
+      for (i = 0; i < cyc.radii.length; i++) {
+        o = document.createElement("option");
+        o.value = String(i);
+        o.textContent = cyc.radii[i].toLocaleString() + " nm";
+        selR.appendChild(o);
+      }
+      state.cycR = cyc.radii.length - 1;   /* the 1000 nm shutdown ring */
+      selR.value = String(state.cycR);
+    }
+    if (state.cycR === null) state.cycR = cyc.radii.length - 1;
+    var ri = Math.min(state.cycR, cyc.radii.length - 1);
+    var s = D.cycSummary(cyc, sel.length ? sel : monthIdxList(), ri);
+    var storms12 = cyc.storms.map(function (row) { return row[ri]; });
+    window.TMCharts.renderCyc($("tm-cyc"), {
+      days: s.perMonth,
+      storms: storms12,
+      selected: state.monthsOn.slice(),
+      monthNames: D.MONTH_NAMES,
+      radius: cyc.radii[ri]
+    });
+    var bits = [];
+    if (s.any) {
+      bits.push("an average season brings " +
+        (s.storms >= 10 ? Math.round(s.storms) : (Math.round(s.storms * 10) / 10)) +
+        " storm" + (s.storms === 1 ? "" : "s") + " inside " + cyc.radii[ri].toLocaleString() +
+        " nm during these months (" + (Math.round(s.days * 10) / 10) + " storm-day" +
+        (s.days === 1 ? "" : "s") + ")");
+    } else {
+      bits.push("no recorded storm inside " + cyc.radii[ri].toLocaleString() +
+        " nm during these months");
+    }
+    if (s.category) {
+      bits.push("strongest on record inside this ring: " + s.category +
+        " (" + Math.round(s.wmax) + " kt)");
+    }
+    state.lastCyc = "Tropical cyclones " + monthsLabel() + ": " + bits.join("; ") + ".";
+    $("tm-cyc-sum").textContent = state.lastCyc;
+  }
+
+  function diSlotLabel(s) {
+    return ("0" + (s * 3)).slice(-2) + ":00-" + ("0" + ((s * 3 + 3) % 24)).slice(-2) + ":00";
+  }
+
+  function renderDiurnalPanel(di, sel) {
+    /* shade the night hours: day-weighted mean daylight over the selection,
+       symmetric about solar noon like the chart's own axis */
+    var dl = D.daylightMonths(state.selected.lat), num = 0, den = 0, i;
+    for (i = 0; i < sel.length; i++) {
+      num += D.MONTH_DAYS[sel[i]] * dl[sel[i]].hours;
+      den += D.MONTH_DAYS[sel[i]];
+    }
+    var hrs = den > 0 ? num / den : 12;
+    window.TMCharts.renderDiurnal($("tm-di"), {
+      hs: di.hs, wind: di.wind,
+      nightRise: hrs >= 24 ? null : 12 - hrs / 2,
+      nightSet: hrs >= 24 ? null : 12 + hrs / 2
+    });
+    var line;
+    if (di.relRange < 0.06) {
+      line = "Across the day " + monthsLabel() + ": no meaningful daily cycle at this " +
+        "point; conditions hold around the clock.";
+    } else {
+      var calm = [], rough = [];
+      if (di.hs && di.hs[di.calmSlot] !== null) calm.push(di.hs[di.calmSlot].toFixed(2) + " m");
+      if (di.wind && di.wind[di.calmSlot] !== null) calm.push(di.wind[di.calmSlot].toFixed(1) + " m/s");
+      if (di.hs && di.hs[di.roughSlot] !== null) rough.push(di.hs[di.roughSlot].toFixed(2) + " m");
+      if (di.wind && di.wind[di.roughSlot] !== null) rough.push(di.wind[di.roughSlot].toFixed(1) + " m/s");
+      line = "Across the day " + monthsLabel() + ": calmest around " + diSlotLabel(di.calmSlot) +
+        " local (" + calm.join(", ") + "), roughest around " + diSlotLabel(di.roughSlot) +
+        " (" + rough.join(", ") + ").";
+    }
+    state.lastDiurnal = line;
+    $("tm-di-sum").textContent = line;
+  }
+
+  /* ---------- PDF ---------- */
+
+  function buildPdf() {
+    if (!state.cellData || !state.lastCombined) return;
+    var btn = $("tm-pdf");
+    btn.disabled = true;
+    var oldLabel = btn.textContent;
+    btn.textContent = "Building PDF...";
+    var res = state.cellData;
+    var sel = monthIdxList();
+    var lim = state.lastLimitP;
+    var span = Math.max(30, Math.min(120, 60));
+    var st = {
+      cfg: cfg,
+      meta: state.provider.meta,
+      isDemo: state.isDemo,
+      thresholds: state.provider.thresholds,
+      combined: state.lastCombined,
+      monthlyAtLimit: state.lastMonthly,
+      selectedFlags: state.monthsOn.slice(),
+      months: sel,
+      monthNames: D.MONTH_NAMES,
+      limit: state.limit,
+      latLonLabel: D.fmtLatLon(state.selected.lat, state.selected.lon),
+      cellLabel: D.fmtLatLon(res.cell.lat, res.cell.lon) + " (" + res.cell.res + " deg grid), " +
+        res.distanceKm + " km from the selected point",
+      basisLabel: state.provider.meta.sourceLabel + ", " + state.provider.meta.period +
+        (state.lastCombined.nTotal ? ", " + state.lastCombined.nTotal.toLocaleString() + " samples for the selected months" : ""),
+      headlineBig: fmtLimitPct(lim),
+      headlineSub: "of the time, significant wave height exceeds " + state.limit + " m at this location " +
+        monthsLabel() + " (roughly " + (lim.p * 0.3044).toFixed(lim.p * 0.3044 < 3 ? 1 : 0) + " days per month).",
+      depthLabel: state.lastDepth,
+      nearestLabel: state.lastNearest ? state.lastNearest + (assetsAreDemo() ? " (DEMO asset)" : "") : null,
+      prevailingLabel: state.lastPrevailing
+        ? state.lastPrevailing.charAt(0).toUpperCase() + state.lastPrevailing.slice(1)
+        : null,
+      extremesLabel: state.lastExtremes,
+      windLabel: state.lastWind,
+      windowsLabel: state.lastWindows,
+      curLines: state.lastCur,
+      cycLabel: state.lastCyc,
+      diurnalLabel: state.lastDiurnal,
+      ensoLabel: state.lastEnso,
+      tpModeLabel: state.lastTpMode,
+      daylightLabel: state.lastDaylight,
+      shareUrl: shareUrl(),
+      assetsShown: !!(state.assetsData && $("tm-assets").checked),
+      disclaimer: (state.isDemo ? cfg.disclaimerDemo + " " : "") + cfg.disclaimerLive,
+      mapPng: state.map.snapshot(res.cell.lat, res.cell.lon, span, 420, 260)
+    };
+    window.TMReport.generate(st).then(function (bytes) {
+      var ns = state.selected.lat >= 0 ? "N" : "S", ew = state.selected.lon >= 0 ? "E" : "W";
+      var fname = "SeaState_" + Math.abs(state.selected.lat).toFixed(2) + ns + "_" +
+        Math.abs(state.selected.lon).toFixed(2) + ew + ".pdf";
+      window.TMReport.deliver(bytes, fname, cfg.pdfDelivery);
+      btn.textContent = oldLabel;
+      btn.disabled = false;
+    }).catch(function (err) {
+      btn.textContent = oldLabel;
+      btn.disabled = false;
+      alert("PDF failed: " + (err && err.message ? err.message : err));
+    });
+  }
+
+  /* ---------- boot ---------- */
+
+  function boot(provider, isDemo) {
+    state.provider = provider;
+    state.isDemo = isDemo;
+    setBanner();
+    var link = $("tm-cta-link");
+    link.href = cfg.website;
+    link.textContent = "Talk to us at " + cfg.website.replace(/^https?:\/\//, "");
+    state.map = new window.TMMap($("tm-map"), {
+      onSelect: onSelect,
+      onHover: function (ll) {
+        var c = $("tm-coords");
+        if (!ll) { c.hidden = true; return; }
+        c.hidden = false;
+        c.textContent = D.fmtLatLon(ll.lat, ll.lon);
+      },
+      onDragMode: function (mode) {
+        $("tm-zoom-win").setAttribute("aria-pressed", mode === "zoomwin" ? "true" : "false");
+      },
+      onView: function () {
+        /* legend zoom hints track visibility flips only */
+        var wv = state.map ? state.map.wellsVisible() : false;
+        var pv = state.map ? state.map.pipesVisible() : false;
+        if (wv !== state.wellsShown || pv !== state.pipesShown) {
+          state.wellsShown = wv;
+          state.pipesShown = pv;
+          refreshLegend();
+        }
+        if (state.map && state.map.hdWanted()) ensureCoastHD();
+      }
+    });
+    $("tm-zoom-in").addEventListener("click", function () { state.map.zoomStep(1.6); });
+    $("tm-zoom-out").addEventListener("click", function () { state.map.zoomStep(1 / 1.6); });
+    $("tm-zoom-win").addEventListener("click", function () {
+      state.map.setZoomWindowMode($("tm-zoom-win").getAttribute("aria-pressed") !== "true");
+    });
+    buildMonthChips();
+    $("tm-limit").addEventListener("change", renderResults);
+    $("tm-limit").addEventListener("input", function () { clearTimeout(state.limTimer); state.limTimer = setTimeout(renderResults, 250); });
+
+    $("tm-win-thr").addEventListener("change", function () {
+      state.winThr = parseInt(this.value, 10) || 0;
+      renderResults();
+    });
+    $("tm-win-dur").addEventListener("change", function () {
+      state.winDur = parseInt(this.value, 10) || 0;
+      renderResults();
+    });
+    $("tm-cyc-r").addEventListener("change", function () {
+      state.cycR = parseInt(this.value, 10) || 0;
+      renderResults();
+    });
+    $("tm-shade").addEventListener("change", refreshHeat);
+    $("tm-pdf").addEventListener("click", buildPdf);
+
+    $("tm-contours").addEventListener("change", function () {
+      if (!$("tm-contours").checked) {
+        state.map.setBathy(null, false);
+        refreshLegend();
+        return;
+      }
+      ensureBathy().then(function (levels) {
+        state.map.setBathy(levels, $("tm-contours").checked);
+        refreshLegend();
+      }).catch(function () {
+        state.bathyFailed = true;
+        $("tm-contours").checked = false;
+        refreshLegend();
+      });
+    });
+
+    $("tm-assets").addEventListener("change", function () {
+      state.map.setAssets(null, $("tm-assets").checked);
+      refreshLegend();
+    });
+
+    /* historical cyclone tracks: an off-by-default map layer. Tracks load
+       lazily on the first tick (demo: synthetic parabolas; live: the
+       cyc/tracks.json emitted alongside the exposure tiles). */
+    function ensureCycTracks() {
+      if (state.cycTracksLoaded) return Promise.resolve(true);
+      if (state.isDemo) {
+        state.map.setCycTracks(D.demoCycTracks());
+        state.cycTracksLoaded = true;
+        return Promise.resolve(true);
+      }
+      return fetch(cfg.dataBase + "cyc/tracks.json").then(function (r) {
+        if (!r.ok) throw new Error("no cyc tracks");
+        return r.json();
+      }).then(function (doc) {
+        var trks = D.decodeCycTracks(doc);
+        if (!trks.length) return false;
+        state.map.setCycTracks(trks);
+        state.cycTracksLoaded = true;
+        if (doc.attribution && state.cycAttribution !== doc.attribution) {
+          state.cycAttribution = doc.attribution;
+          updateAttribution();
+        }
+        return true;
+      }).catch(function () { return false; });
+    }
+
+    $("tm-cyctracks").addEventListener("change", function () {
+      var box = this;
+      if (box.checked && !state.cycTracksLoaded) {
+        ensureCycTracks().then(function (ok) {
+          if (!ok) box.checked = false;
+          state.map.setCycTracksVisible(box.checked);
+          refreshLegend();
+        });
+        return;
+      }
+      state.map.setCycTracksVisible(box.checked);
+      refreshLegend();
+    });
+
+    if (state.isDemo) {
+      $("tm-cyctracks-label").hidden = false;
+    } else if (cfg.dataBase !== null) {
+      D.cycManifest(cfg.dataBase).then(function (mf) {
+        if (mf && mf.tracks) $("tm-cyctracks-label").hidden = false;
+      });
+    }
+
+    /* asset market filters (type / in-service / water depth / free text).
+       Applied to the drawn layer and hover only; the nearest-asset context
+       line stays on the full set. Depth limits hide assets with no known
+       depth by design.
+
+       "In service only" (DEFAULT ON) hides wells that were drilled but never
+       put to work: the registers are dominated by wildcats, appraisals and
+       plugged holes. A well counts as in service when its status says
+       producing / injecting / development / completed / operating /
+       suspended / shut-in; abandoned, plugged, junked, dry and
+       exploration-purpose wells do not, and neither does a well whose
+       register carries no usable status (untick the box to see everything). */
+    var WELL_INACTIVE_RX = /abandon|plug|p&a|paa|junk|dry|cancel|wildcat|apprais|explor|soil|stratigraphic/;
+    var WELL_ACTIVE_RX = /produc|inject|develop|operat|online|in service|active|completed|suspend|shut|drill/;
+
+    function wellInService(a) {
+      var s = (a.s || "").toLowerCase();
+      if (WELL_INACTIVE_RX.test(s)) return false;
+      return WELL_ACTIVE_RX.test(s);
+    }
+
+    function applyAssetFilter() {
+      var wantW = $("tm-f-wells").checked, wantP = $("tm-f-plats").checked, wantF = $("tm-f-fields").checked;
+      var activeOnly = $("tm-f-active").checked;
+      var dmin = parseFloat($("tm-f-dmin").value), dmax = parseFloat($("tm-f-dmax").value);
+      var txt = $("tm-f-text").value.trim().toLowerCase();
+      var useDepth = !isNaN(dmin) || !isNaN(dmax);
+      var all = wantW && wantP && wantF && !activeOnly && !useDepth && !txt;
+      function fn(a) {
+        var isW = a.t === "well", isP = (a.t || "").indexOf("platform") >= 0;
+        if (isW && !wantW) return false;
+        if (isP && !wantP) return false;
+        if (!isW && !isP && !wantF) return false;
+        if (isW && activeOnly && !wellInService(a)) return false;
+        if (useDepth) {
+          if (!a.d) return false;
+          if (!isNaN(dmin) && a.d < dmin) return false;
+          if (!isNaN(dmax) && a.d > dmax) return false;
+        }
+        if (txt) {
+          var hay = (a.n + " " + (a.s || "") + " " + (a.o || "")).toLowerCase();
+          if (hay.indexOf(txt) < 0) return false;
+        }
+        return true;
+      }
+      state.map.setAssetFilter(all ? null : fn);
+      var el = $("tm-f-count");
+      if (all) { el.textContent = ""; return; }
+      var n2 = 0, i2, list = state.assetsData.assets;
+      for (i2 = 0; i2 < list.length; i2++) if (fn(list[i2])) n2++;
+      el.textContent = n2.toLocaleString() + " of " + list.length.toLocaleString() + " match";
+    }
+
+    var fltIds = ["tm-f-wells", "tm-f-active", "tm-f-plats", "tm-f-fields", "tm-f-dmin", "tm-f-dmax", "tm-f-text"];
+    for (var fi = 0; fi < fltIds.length; fi++) {
+      $(fltIds[fi]).addEventListener("input", function () {
+        clearTimeout(state.fltTimer);
+        state.fltTimer = setTimeout(applyAssetFilter, 200);
+      });
+    }
+
+    $("tm-f-pipes").addEventListener("change", function () {
+      state.map.setLinesVisible(this.checked);
+      refreshLegend();
+    });
+
+    loadAssetsData().then(function (d) {
+      if (!d || d.format !== 1 || !d.assets || !d.assets.length) return;
+      state.assetsData = d;
+      $("tm-assets-toggle").hidden = false;
+      $("tm-asset-filters").hidden = false;
+      state.map.setAssets(d.assets, $("tm-assets").checked);
+      applyAssetFilter();   /* the in-service default is ON, so filter at load */
+      if (d.lines && d.lines.length) {
+        state.assetLines = D.decodeAssetLines(d.lines);
+        state.map.setAssetLines(state.assetLines);
+        $("tm-f-pipes-label").hidden = false;
+      }
+      var att = [], i;
+      for (i = 0; i < d.sources.length; i++) {
+        if (d.sources[i].attribution && att.indexOf(d.sources[i].attribution) < 0) {
+          att.push(d.sources[i].attribution);
+        }
+      }
+      state.assetsAttribution = att.join(" ");
+      updateAttribution();
+      refreshLegend();
+      if (state.cellData) renderResults();
+    }).catch(function () { /* no assets file deployed: layer stays hidden */ });
+
+    /* warm the depth data so the first click can state a depth band */
+    setTimeout(function () { ensureBathy().catch(function () { state.bathyFailed = true; }); }, 2500);
+
+    refreshHeat();
+
+    /* manual position entry: parse, run the exact same path as a map click,
+       then echo the interpretation in the OTHER notation so a misread is
+       visible (typed decimal -> shown DDM, and vice versa) */
+    function goToPosition() {
+      var msg = $("tm-goto-msg");
+      var r = D.parseLatLon($("tm-goto-in").value);
+      if (r.error) {
+        msg.className = "tm-goto-msg tm-goto-err";
+        msg.textContent = r.error;
+        return;
+      }
+      var scale = Math.max(state.map.minScale || 3, state.map.cssW / 60);
+      state.map.centreOn(r.lat, r.lon, scale);
+      onSelect(r.lat, r.lon);
+      msg.className = "tm-goto-msg";
+      msg.textContent = "Read as " + D.fmtDDM(r.lat, r.lon) + " = " +
+        r.lat.toFixed(4) + ", " + r.lon.toFixed(4) + " decimal, WGS84";
+    }
+    $("tm-goto-btn").addEventListener("click", goToPosition);
+    $("tm-goto-in").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); goToPosition(); }
+    });
+
+    /* shared links: apply an inbound #loc=... (or ?loc=...) state, follow
+       hash edits in an open tab, and wire the copy button */
+    $("tm-share").addEventListener("click", copyShareLink);
+    window.addEventListener("hashchange", function () {
+      var frag = window.location.hash.slice(1);
+      if (frag === state.lastHash) return;   /* our own replaceState echo */
+      var st = parseShareState();
+      if (st) applyShareState(st);
+    });
+    var st0 = parseShareState();
+    if (st0) applyShareState(st0);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var useDemo = function () { boot(new D.DemoProvider(), true); };
+    if (cfg.dataBase === null) { useDemo(); return; }
+    var tp;
+    try {
+      tp = new D.TileProvider(cfg.dataBase);
+      tp.ready.then(function () { boot(tp, tp.meta.source === "DEMO"); }).catch(useDemo);
+    } catch (e) {
+      useDemo();
+    }
+  });
+})();

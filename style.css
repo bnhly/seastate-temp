@@ -445,12 +445,6 @@ html, body {
   margin-top: 8px;
 }
 .tm-btn-secondary:hover { background: rgba(20, 48, 74, 0.06); }
-.tm-actions-note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
-
-/* About (crawlable copy) */
-.tm-about { margin-top: 26px; padding: 0 2px; color: var(--ink-2); }
-.tm-about h2 { font-size: 17px; color: var(--ink); margin: 0 0 6px; }
-.tm-about p { margin: 6px 0; max-width: 780px; }
 
 /* CTA + footer */
 .tm-cta {

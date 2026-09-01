@@ -249,7 +249,7 @@
                 : ""),
               nx, noteY, 7.5, nw, 9.5, rgb(P, COL.ink2)) - 6;
             noteY = drawWrapped(page, fonts.bold,
-              "For project specific metocean studies, weather windows and workability: " + state.cfg.website.replace(/^https?:\/\//, ""),
+              "Specialist lifting solutions for subsea operations: " + state.cfg.website.replace(/^https?:\/\//, ""),
               nx, noteY, 7.5, nw, 9.5, rgb(P, COL.navy)) - 4;
             if (state.shareUrl) {
               /* the URL is one unbroken token, so wrap it by measured width */

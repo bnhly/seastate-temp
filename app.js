@@ -258,9 +258,16 @@
   }
 
   function updateAttribution() {
+    /* The footer is the ONLY place sources are listed now (the data banner
+       was removed 1 Sep 26), so it must be complete from first paint rather
+       than filling in as layers load. Each layer's own file still supplies
+       the authoritative wording once fetched; these are the same strings,
+       stated up front. */
     var parts = [state.provider.meta.attribution,
       "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain)."];
-    if (state.depthAttribution) parts.push(state.depthAttribution);
+    parts.push(state.depthAttribution ||
+      "Water depths: ETOPO 2022 Global Relief Model, NOAA National Centers for " +
+      "Environmental Information (public domain).");
     if (state.assetsAttribution) parts.push(state.assetsAttribution);
     if (state.cycAttribution) parts.push(state.cycAttribution);
     $("tm-attribution").textContent = parts.join(" ");
@@ -275,19 +282,21 @@
 
   function setBanner() {
     var el = $("tm-banner");
-    el.hidden = false;
+    /* In live mode the page carries no data banner: every source is listed
+       once, at the foot of the page (Ben, 1 Sep 26). The DEMO banner stays -
+       it warns that the numbers are synthetic, which is a safety notice, not
+       a source listing. */
     if (state.isDemo) {
+      el.hidden = false;
       el.className = "tm-banner";
       el.textContent = "Demonstration data. The numbers below are synthetic placeholders so you " +
         "can try the tool; the production version runs on ERA5 reanalysis statistics.";
     } else {
-      el.className = "tm-banner tm-banner-live";
-      el.textContent = "Data: " + state.provider.meta.sourceLabel + ", " + state.provider.meta.period +
-        ". Long term statistics for open water; see the notes at the foot of the page.";
+      el.hidden = true;
+      el.textContent = "";
     }
     $("tm-disclaimer").textContent = (state.isDemo ? cfg.disclaimerDemo + " " : "") + cfg.disclaimerLive +
-      " Asset positions and depth bands are indicative, never for navigation." +
-      " For project specific metocean studies contact " + cfg.companyName + ".";
+      " Asset positions and depth bands are indicative, never for navigation.";
     $("tm-terms").textContent = cfg.termsNote;
     updateAttribution();
   }

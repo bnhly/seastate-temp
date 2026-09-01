@@ -327,6 +327,9 @@
           }
           field("Selected location", state.latLonLabel);
           field("Nearest data point", state.cellLabel);
+          if (state.meanHs !== null && state.meanHs !== undefined) {
+            field("Mean significant wave height", state.meanHs.toFixed(1) + " m");
+          }
           if (state.depthLabel) field("Water depth at data point", state.depthLabel);
           if (state.nearestLabel) field("Nearest mapped asset", state.nearestLabel);
           if (state.prevailingLabel) field("Prevailing conditions", state.prevailingLabel);

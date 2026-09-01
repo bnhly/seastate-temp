@@ -552,6 +552,24 @@
     prevEl.hidden = true;
     if (prev && sel.length) {
       var bits = [];
+      /* Mean Hs FIRST. The map has carried a "Mean Hs" colour scale from the
+         start, but clicking a point never gave the number the scale is about
+         (Ben, 1 Sep 26). It is the plainest fact about a site and it was the
+         one thing missing. Sample-weighted across the selected months, so a
+         part-month never counts as a whole one. */
+      var mSum = 0, mN = 0, mi2, mm;
+      for (mi2 = 0; mi2 < sel.length; mi2++) {
+        mm = res.mean ? res.mean[sel[mi2]] : null;
+        if (mm !== null && mm !== undefined && res.n[sel[mi2]] > 0) {
+          mSum += mm * res.n[sel[mi2]];
+          mN += res.n[sel[mi2]];
+        }
+      }
+      state.lastMeanHs = mN ? mSum / mN : null;
+      if (state.lastMeanHs !== null) {
+        bits.push("mean significant wave height " + state.lastMeanHs.toFixed(1) + " m");
+      }
+      var dirIdx = bits.length;
       if (prev.dirName) {
         bits.push("waves most often from the " + prev.dirName +
           (prev.dirPct ? " (about " + Math.round(prev.dirPct) + "% of the time)" : ""));
@@ -562,7 +580,14 @@
         prevEl.hidden = false;
         prevEl.innerHTML = "";
         prevEl.appendChild(document.createTextNode("Prevailing conditions " + monthsLabel() + ": "));
-        if (prev.dirDeg !== null) {
+        /* The arrow shows which way the waves TRAVEL, so it belongs against
+           the direction phrase. With mean Hs added in front of that phrase it
+           was left stranded at the head of the sentence, pointing at a number
+           it says nothing about. */
+        var lead = bits.slice(0, dirIdx).join(", ");
+        var rest = bits.slice(dirIdx).join(", ");
+        if (lead) prevEl.appendChild(document.createTextNode(lead + (rest ? ", " : "")));
+        if (rest && prev.dirDeg !== null) {
           var arrow = document.createElement("span");
           arrow.className = "tm-dir-arrow";
           arrow.textContent = "\u2192";
@@ -571,7 +596,7 @@
           prevEl.appendChild(arrow);
           prevEl.appendChild(document.createTextNode(" "));
         }
-        prevEl.appendChild(document.createTextNode(state.lastPrevailing + "."));
+        prevEl.appendChild(document.createTextNode((rest || lead) + "."));
       }
     }
 
@@ -1340,6 +1365,7 @@
         monthsLabel() + " (roughly " + (lim.p * 0.3044).toFixed(lim.p * 0.3044 < 3 ? 1 : 0) + " days per month).",
       depthLabel: state.lastDepth,
       nearestLabel: state.lastNearest ? state.lastNearest + (assetsAreDemo() ? " (DEMO asset)" : "") : null,
+      meanHs: state.lastMeanHs === undefined ? null : state.lastMeanHs,
       prevailingLabel: state.lastPrevailing
         ? state.lastPrevailing.charAt(0).toUpperCase() + state.lastPrevailing.slice(1)
         : null,

@@ -546,8 +546,8 @@
                 y3 = drawWrapped(p3, fonts.reg, state.tpModeLabel, M, y3, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink2)) - 4;
               }
               y3 = drawWrapped(p3, fonts.reg,
-                "Two humps mean two seas: local wind waves and longer swell taking turns. " +
-                "This is the dominant period over time, not a spectral split of a single sea.",
+                "Multiple humps usually mean multiple seas, for example local wind waves " +
+                "and longer swell.",
                 M, y3, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted)) - 16;
             }
 

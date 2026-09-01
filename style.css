@@ -542,3 +542,23 @@ html, body {
   .tm-sticky-pct { font-size: 18px; }
   .tm-sticky-txt { font-size: 12px; }
 }
+
+.tm-lg-none { color: var(--muted, #8a969e); font-style: italic; }
+
+/* Measure readout: same family as the coords chip. TOP left, because the
+   legend already owns bottom left and the coords chip owns bottom right. */
+.tm-map-measure {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(252, 252, 251, 0.94);
+  border: 1px solid var(--border, #e3e8eb);
+  border-left: 3px solid #b5341c;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  color: var(--ink, #1b2631);
+  font-variant-numeric: tabular-nums;
+  max-width: 60%;
+  pointer-events: none;
+}
+.tm-map-measure b { font-weight: 700; }
+.tm-map-measure .tm-meas-sub { color: var(--ink-2, #52514e); font-size: 11.5px; display: block; }

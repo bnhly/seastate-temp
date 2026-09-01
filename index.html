@@ -96,7 +96,12 @@
           <button id="tm-zoom-out" type="button" aria-label="Zoom out">&minus;</button>
           <button id="tm-zoom-win" type="button" aria-pressed="false" aria-label="Zoom to an area"
             title="Drag a box to zoom to it (shortcut: hold Shift and drag any time)">&#9633;</button>
+          <button id="tm-measure" type="button" aria-pressed="false" aria-label="Measure a distance"
+            title="Measure: click a point, then click another. Escape ends it.">&#8596;</button>
         </div>
+        <!-- Reading for the current measurement. Sits over the map rather
+             than in the panel so the eye stays on the line being drawn. -->
+        <div class="tm-map-measure" id="tm-measure-out" hidden></div>
         <div class="tm-map-legend" id="tm-legend" hidden></div>
         <div class="tm-map-hint" id="tm-hint">Click the map to choose a location</div>
         <div class="tm-map-coords" id="tm-coords" hidden></div>

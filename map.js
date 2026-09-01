@@ -48,6 +48,125 @@
   }
   var MERC_Y_MAX = mercY(MERC_LAT_MAX);
 
+  /* Squared distance from a point to a segment, plus the closest point on
+     it. Squared because nothing here needs the root, and hover runs this
+     over every segment of every candidate line on each mouse move. */
+  function segDist2(mx, my, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var len2 = dx * dx + dy * dy;
+    var t = len2 > 0 ? ((mx - x1) * dx + (my - y1) * dy) / len2 : 0;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    var cx = x1 + t * dx, cy = y1 + t * dy;
+    return { d2: (mx - cx) * (mx - cx) + (my - cy) * (my - cy), x: cx, y: cy };
+  }
+
+
+  /* ---------- measuring ------------------------------------------------
+     Great-circle distance and initial bearing. The drawn line is straight in
+     screen space, which on Mercator is a rhumb line rather than the great
+     circle being measured; over the ranges this tool is for (confirming a
+     position, spacing between two points on a field) the two are visually
+     the same, and the number reported is the great circle. */
+  function geoDist(a, b) {
+    var R = 6371.0088, d2r = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * d2r, dLon = (b.lon - a.lon) * d2r;
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(a.lat * d2r) * Math.cos(b.lat * d2r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function geoBearing(a, b) {
+    var d2r = Math.PI / 180;
+    var y = Math.sin((b.lon - a.lon) * d2r) * Math.cos(b.lat * d2r);
+    var x = Math.cos(a.lat * d2r) * Math.sin(b.lat * d2r) -
+      Math.sin(a.lat * d2r) * Math.cos(b.lat * d2r) * Math.cos((b.lon - a.lon) * d2r);
+    return (Math.atan2(y, x) / d2r + 360) % 360;
+  }
+
+  /* Nautical miles first: this is a marine tool and a mile is the unit the
+     numbers get quoted in. Kilometres alongside, and metres when the two
+     points are close enough that a mile reads as zero. */
+  function measureLabel(km) {
+    var nm = km / 1.852;
+    if (km < 1) return Math.round(km * 1000) + " m  \u00b7  " + nm.toFixed(2) + " nm";
+    if (km < 100) return km.toFixed(2) + " km  \u00b7  " + nm.toFixed(2) + " nm";
+    return Math.round(km).toLocaleString() + " km  \u00b7  " + Math.round(nm).toLocaleString() + " nm";
+  }
+
+  /* ---------- hover callouts -------------------------------------------
+     One box, three optional lines, used by every hover type so they cannot
+     drift apart in style. Clamped to the canvas so a callout near an edge
+     stays readable. */
+  function drawTip(ctx, cssW, ax, ay, l1, l2, l3) {
+    ctx.font = "600 12px system-ui, sans-serif";
+    var w1 = ctx.measureText(l1 || "").width;
+    ctx.font = "11px system-ui, sans-serif";
+    var w2 = Math.max(l2 ? ctx.measureText(l2).width : 0, l3 ? ctx.measureText(l3).width : 0);
+    var rows = 1 + (l2 ? 1 : 0) + (l3 ? 1 : 0);
+    var bw = Math.max(w1, w2) + 18, bh = 10 + rows * 14;
+    var bx = Math.min(cssW - bw - 6, Math.max(6, ax + 12));
+    var by = Math.max(6, ay - bh - 10);
+    ctx.fillStyle = "rgba(252, 252, 251, 0.97)";
+    ctx.strokeStyle = "rgba(11, 11, 11, 0.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 6); else ctx.rect(bx, by, bw, bh);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#0b0b0b";
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillText(l1 || "", bx + 9, by + 16);
+    ctx.fillStyle = "#52514e";
+    ctx.font = "11px system-ui, sans-serif";
+    if (l2) ctx.fillText(l2, bx + 9, by + 30);
+    if (l3) ctx.fillText(l3, bx + 9, by + 44);
+  }
+
+  /* Registers vary in what they carry. GA/NOPTA pipelines mostly arrive with
+     no name at all, so the heading falls back to the operator before the
+     generic word, and a line with nothing but geometry says so plainly
+     rather than showing an empty box. */
+  function lineTipText(ln) {
+    var named = ln.n && ln.n.toLowerCase() !== "pipeline";
+    var head = named ? ln.n : (ln.o || "Pipeline");
+    var bits = [];
+    if (named && ln.o) bits.push(ln.o);
+    if (ln.s) bits.push(ln.s);
+    if (ln.c) bits.push(ln.c);
+    var sub = bits.join(" \u00B7 ");
+    return [head, "Pipeline" + (sub ? ", " + sub : ""),
+            (!named && !ln.o && !ln.s) ? "No further detail in the register" : ""];
+  }
+
+  /* Saffir-Simpson from one-minute sustained wind, which is what IBTrACS
+     max wind is reported as. Below 64 kt it is not a hurricane, so it is
+     named by stage rather than given a category. */
+  function cycCategory(kt) {
+    if (!(kt > 0)) return "";
+    if (kt >= 137) return "Category 5";
+    if (kt >= 113) return "Category 4";
+    if (kt >= 96) return "Category 3";
+    if (kt >= 83) return "Category 2";
+    if (kt >= 64) return "Category 1";
+    if (kt >= 34) return "Tropical storm strength";
+    return "Below tropical storm strength";
+  }
+
+  function trackTipText(tr) {
+    var name = tr.n && String(tr.n).toUpperCase() !== "NOT_NAMED" ? tr.n : "Unnamed storm";
+    var bits = [];
+    /* IBTrACS names already carry the season ("Amy 1980"), so repeating it
+       underneath reads as a mistake. */
+    if (tr.y && name.indexOf(String(tr.y)) < 0) bits.push(String(tr.y));
+    if (tr.y && name.indexOf(String(tr.y)) >= 0 && !bits.length) bits.push("season " + tr.y);
+    var cat = cycCategory(tr.w);
+    if (cat) bits.push(cat);
+    return [name, bits.join(" \u00B7 "),
+            tr.w ? "Peak " + Math.round(tr.w) + " kt (" + Math.round(tr.w * 1.852) + " km/h) over its life" : ""];
+  }
+
+
   function TMMap(canvas, opts) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
@@ -319,7 +438,7 @@
         st = BATHY_STYLE[levels[i].d];
         if (!st) continue;
         this.bathyPaths.push({ d: levels[i].d, path: pathFromRings(levels[i].rings, false),
-          alpha: st.a, w: st.w });
+          alpha: st.a, w: st.w, rings: levels[i].rings, bboxes: levels[i].bboxes });
       }
     }
     this.bathyOn = !!show && !!this.bathyPaths;
@@ -347,6 +466,26 @@
   };
 
   /* Pipelines: decoded [{pts:[[lat,lon],...]}], one merc-space Path2D. */
+  /* Bounding box per line, in lat/lon, computed once. Hover has to answer
+     "which of 29,000 pipelines is under the cursor" on every mouse move; a
+     box test rejects nearly all of them before any real distance maths. */
+  function bboxLines(lines) {
+    var out = [], i, k, pts, la0, la1, lo0, lo1;
+    for (i = 0; i < (lines || []).length; i++) {
+      pts = lines[i].pts;
+      if (!pts || pts.length < 2) continue;
+      la0 = la1 = pts[0][0]; lo0 = lo1 = pts[0][1];
+      for (k = 1; k < pts.length; k++) {
+        if (pts[k][0] < la0) la0 = pts[k][0];
+        if (pts[k][0] > la1) la1 = pts[k][0];
+        if (pts[k][1] < lo0) lo0 = pts[k][1];
+        if (pts[k][1] > lo1) lo1 = pts[k][1];
+      }
+      out.push({ ln: lines[i], la0: la0, la1: la1, lo0: lo0, lo1: lo1 });
+    }
+    return out;
+  }
+
   TMMap.prototype.setAssetLines = function (lines) {
     var p = new Path2D(), i, k, pts;
     for (i = 0; i < (lines || []).length; i++) {
@@ -354,9 +493,84 @@
       p.moveTo(pts[0][1], mercY(pts[0][0]));
       for (k = 1; k < pts.length; k++) p.lineTo(pts[k][1], mercY(pts[k][0]));
     }
+    this.assetLinesBox = bboxLines(lines);
     this.assetLinesPath = (lines && lines.length) ? p : null;
     this.linesOn = this.linesOn === undefined ? true : this.linesOn;
     this.render();
+  };
+
+  /* Nearest polyline within HIT_PX of the cursor, or null. Two stages: a
+     lat/lon box test to throw out nearly everything, then a real
+     point-to-segment distance in SCREEN space, because the tolerance the
+     user feels is in pixels, not degrees. Returns the line and the point on
+     it nearest the cursor, so the callout can anchor to the line itself. */
+  var HIT_PX = 7;
+
+  TMMap.prototype.hitLine = function (boxes, mx, my) {
+    var self = this, i, b, k, pts, best = HIT_PX * HIT_PX, hit = null, at = null;
+    /* the box test needs a degree padding equal to HIT_PX on screen */
+    var padLon = (HIT_PX + 2) / this.view.scale;
+    var c = this.pointToLatLon(mx, my);
+    if (!c) return null;
+    var padLat = padLon / Math.max(0.15, Math.cos(c.lat * Math.PI / 180));
+    for (i = 0; i < boxes.length; i++) {
+      b = boxes[i];
+      if (c.lat < b.la0 - padLat || c.lat > b.la1 + padLat) continue;
+      if (c.lon < b.lo0 - padLon || c.lon > b.lo1 + padLon) continue;
+      pts = b.ln.pts;
+      var px = self.lonToX(pts[0][1]), py = self.latToY(pts[0][0]), qx, qy;
+      for (k = 1; k < pts.length; k++) {
+        qx = self.lonToX(pts[k][1]); qy = self.latToY(pts[k][0]);
+        var r = segDist2(mx, my, px, py, qx, qy);
+        if (r.d2 < best) { best = r.d2; hit = b.ln; at = { x: r.x, y: r.y }; }
+        px = qx; py = qy;
+      }
+    }
+    return hit ? { ln: hit, at: at } : null;
+  };
+
+  /* The corners of the current view, in degrees. */
+  TMMap.prototype.viewBounds = function () {
+    var a = this.pointToLatLon(0, 0), b = this.pointToLatLon(this.cssW, this.cssH);
+    var lonSpan = this.cssW / this.view.scale;
+    return {
+      lat0: Math.min(a.lat, b.lat), lat1: Math.max(a.lat, b.lat),
+      lon0: this.view.cLon - lonSpan / 2, lon1: this.view.cLon + lonSpan / 2,
+      whole: lonSpan >= 360
+    };
+  };
+
+  /* Which drawn contour depths actually cross the current view. The legend
+     used to list 200 / 1,000 / 3,000 m always, so on a shelf where only the
+     200 m line exists it named two depths that were nowhere on screen.
+
+     This tests ring VERTICES, not ring bounding boxes. A single 3,000 m ring
+     spans 109 degrees of longitude, so its box overlaps almost any view and a
+     box test answers "yes" everywhere, which is what the first attempt did.
+     Boxes still serve as a cheap reject before the vertex scan, and the scan
+     stops at the first vertex inside, so the common case is fast. */
+  TMMap.prototype.depthsInView = function () {
+    if (!this.bathyOn || !this.bathyPaths) return [];
+    var v = this.viewBounds(), out = [], i, k, j, bb, lv, ring, halfW, hit;
+    halfW = this.cssW / this.view.scale / 2;
+    for (i = 0; i < this.bathyPaths.length; i++) {
+      lv = this.bathyPaths[i];
+      hit = false;
+      for (k = 0; k < (lv.rings || []).length && !hit; k++) {
+        bb = lv.bboxes[k];
+        if (bb[3] < v.lat0 || bb[1] > v.lat1) continue;
+        ring = lv.rings[k];
+        for (j = 0; j < ring.length; j++) {
+          /* rings are [lon, lat] */
+          if (ring[j][1] < v.lat0 || ring[j][1] > v.lat1) continue;
+          if (!v.whole && Math.abs(wrapDelta(ring[j][0] - this.view.cLon)) > halfW) continue;
+          hit = true;
+          break;
+        }
+      }
+      if (hit) out.push(lv.d);
+    }
+    return out;
   };
 
   TMMap.prototype.setLinesVisible = function (on) {
@@ -382,16 +596,20 @@
 
   TMMap.prototype.buildCycPaths = function () {
     var tracks = this.cycTracksAll || [];
-    var minor = new Path2D(), major = new Path2D(), i, k, pts, p, kept = 0;
+    var minor = new Path2D(), major = new Path2D(), i, k, pts, p, kept = 0, shown = [];
     for (i = 0; i < tracks.length; i++) {
       if (this.cycKeep && !this.cycKeep(tracks[i])) continue;
       pts = tracks[i].pts;
       if (!pts || pts.length < 2) continue;
       kept += 1;
+      shown.push(tracks[i]);
       p = tracks[i].w >= 96 ? major : minor;
       p.moveTo(pts[0][1], mercY(pts[0][0]));
       for (k = 1; k < pts.length; k++) p.lineTo(pts[k][1], mercY(pts[k][0]));
     }
+    /* Hit-test only what is actually drawn, so a filtered-out storm can
+       never be labelled. Built from the same loop for that reason. */
+    this.cycShownBox = bboxLines(shown);
     this.cycMinorPath = kept ? minor : null;
     this.cycMajorPath = kept ? major : null;
     this.render();
@@ -655,36 +873,70 @@
         ctx.strokeStyle = "#c2571f";
         ctx.lineWidth = 2;
         ctx.stroke();
-        var line1 = aa.n;
-        var line2 = (aa.t || "asset") + (aa.s ? ", " + aa.s : "") + (aa.c ? " \u00B7 " + aa.c : "");
         var l3parts = [];
         if (aa.d) l3parts.push("~" + aa.d.toLocaleString() + " m water");
         if (aa.y) l3parts.push(String(aa.y));
         if (aa.o) l3parts.push(aa.o);
-        var line3 = l3parts.join(" \u00B7 ");
-        ctx.font = "600 12px system-ui, sans-serif";
-        var w1 = ctx.measureText(line1).width;
-        ctx.font = "11px system-ui, sans-serif";
-        var w2 = Math.max(ctx.measureText(line2).width, line3 ? ctx.measureText(line3).width : 0);
-        var bw = Math.max(w1, w2) + 18, bh = line3 ? 52 : 38;
-        var bx = Math.min(cssW - bw - 6, Math.max(6, ax + 12));
-        var by = Math.max(6, ay - bh - 10);
-        ctx.fillStyle = "rgba(252, 252, 251, 0.97)";
-        ctx.strokeStyle = "rgba(11, 11, 11, 0.18)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 6); else ctx.rect(bx, by, bw, bh);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#0b0b0b";
-        ctx.font = "600 12px system-ui, sans-serif";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText(line1, bx + 9, by + 16);
-        ctx.fillStyle = "#52514e";
-        ctx.font = "11px system-ui, sans-serif";
-        ctx.fillText(line2, bx + 9, by + 30);
-        if (line3) ctx.fillText(line3, bx + 9, by + 44);
+        drawTip(ctx, cssW, ax, ay, aa.n,
+          (aa.t || "asset") + (aa.s ? ", " + aa.s : "") + (aa.c ? " \u00B7 " + aa.c : ""),
+          l3parts.join(" \u00B7 "));
       }
+
+      /* Pipeline under the cursor: highlight the line itself, then label it.
+         Anchored at the nearest point ON the line rather than the cursor, so
+         the callout points at what it describes. */
+      if (withChrome && this.hoverLine) {
+        var hl = this.hoverLine, hp = hl.pts, hk;
+        ctx.beginPath();
+        ctx.moveTo(lonToX(hp[0][1]), latToY(hp[0][0]));
+        for (hk = 1; hk < hp.length; hk++) ctx.lineTo(lonToX(hp[hk][1]), latToY(hp[hk][0]));
+        ctx.strokeStyle = "#c2571f";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        var lt = lineTipText(hl);
+        drawTip(ctx, cssW, this.hoverLineAt.x, this.hoverLineAt.y, lt[0], lt[1], lt[2]);
+      }
+
+      /* Cyclone track under the cursor. */
+      if (withChrome && this.hoverTrack) {
+        var ht = this.hoverTrack, tp = ht.pts, tk;
+        ctx.beginPath();
+        ctx.moveTo(lonToX(tp[0][1]), latToY(tp[0][0]));
+        for (tk = 1; tk < tp.length; tk++) ctx.lineTo(lonToX(tp[tk][1]), latToY(tp[tk][0]));
+        ctx.strokeStyle = "#7a2f8f";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        var tt = trackTipText(ht);
+        drawTip(ctx, cssW, this.hoverTrackAt.x, this.hoverTrackAt.y, tt[0], tt[1], tt[2]);
+      }
+    }
+
+    /* measurement: the line, its ends, and the reading at the midpoint */
+    if (withChrome && this.measure && this.measure.a && this.measure.b) {
+      var ma = this.measure.a, mb = this.measure.b;
+      var mx0 = lonToX(ma.lon), my0 = latToY(ma.lat);
+      var mx1 = lonToX(mb.lon), my1 = latToY(mb.lat);
+      ctx.save();
+      /* a light halo under the line keeps it readable over dark shading */
+      ctx.strokeStyle = "rgba(252, 252, 251, 0.9)";
+      ctx.lineWidth = 4.5;
+      ctx.beginPath(); ctx.moveTo(mx0, my0); ctx.lineTo(mx1, my1); ctx.stroke();
+      ctx.strokeStyle = "#b5341c";
+      ctx.lineWidth = 1.8;
+      if (!this.measure.fixed) ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(mx0, my0); ctx.lineTo(mx1, my1); ctx.stroke();
+      ctx.setLineDash([]);
+      var me;
+      for (me = 0; me < 2; me++) {
+        var ex = me ? mx1 : mx0, ey = me ? my1 : my0;
+        ctx.beginPath(); ctx.arc(ex, ey, 4, 0, 2 * Math.PI);
+        ctx.fillStyle = "#b5341c"; ctx.fill();
+        ctx.strokeStyle = "rgba(252, 252, 251, 0.95)"; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      /* No label on the line itself: the readout above the map already
+         carries the distance, the bearing and both positions, and a second
+         copy at the midpoint only covered the map it was measuring. */
+      ctx.restore();
     }
 
     /* data cell rectangle */
@@ -777,6 +1029,33 @@
     this.zoomAt(this.cssW / 2, this.cssH / 2, factor);
   };
 
+  /* Measuring is a mode like zoom-window, but it is NOT one-shot: people
+     take several measurements in a row, and dropping out after each one
+     would mean re-arming every time. Escape or the button ends it. */
+  TMMap.prototype.setMeasureMode = function (on) {
+    this.dragMode = on ? "measure" : "pan";
+    if (!on) this.measure = null;
+    this.canvas.style.cursor = on ? "crosshair" : "";
+    if (this.opts.onDragMode) this.opts.onDragMode(this.dragMode);
+    if (this.opts.onMeasure) this.opts.onMeasure(this.measureInfo());
+    this.render();
+  };
+
+  TMMap.prototype.clearMeasure = function () {
+    this.measure = null;
+    if (this.opts.onMeasure) this.opts.onMeasure(null);
+    this.render();
+  };
+
+  TMMap.prototype.measureInfo = function () {
+    var m = this.measure;
+    if (!m || !m.a || !m.b) return null;
+    var km = geoDist(m.a, m.b);
+    return { a: m.a, b: m.b, km: km, nm: km / 1.852,
+             bearing: geoBearing(m.a, m.b), label: measureLabel(km),
+             fixed: !!m.fixed };
+  };
+
   TMMap.prototype.setZoomWindowMode = function (on) {
     this.dragMode = on ? "zoomwin" : "pan";
     if (!on) this.zoomDrag = null;
@@ -825,6 +1104,7 @@
         if (self.opts.onHover) self.opts.onHover(self.pointToLatLon(e.offsetX, e.offsetY));
         return;
       }
+      if (self.dragMode === "measure") return;   /* never pan while measuring */
       var ids = Object.keys(self.pointers);
       if (ids.length === 1) {
         var dx = e.offsetX - p.x, dy = e.offsetY - p.y;
@@ -870,6 +1150,20 @@
       if (self.downAt && self.dragMoved < 6 && Date.now() - self.downAt.t < 700) {
         var ll = self.pointToLatLon(e.offsetX, e.offsetY);
         self.downAt = null;
+        if (self.dragMode === "measure") {
+          /* first tap starts, second finishes, third starts again. The panel
+             result is never touched in this mode: measuring a distance is not
+             asking for statistics somewhere new. */
+          if (!self.measure || self.measure.fixed) {
+            self.measure = { a: ll, b: ll, fixed: false };
+          } else {
+            self.measure.b = ll;
+            self.measure.fixed = true;
+          }
+          if (self.opts.onMeasure) self.opts.onMeasure(self.measureInfo());
+          self.render();
+          return;
+        }
         if (self.opts.onSelect) self.opts.onSelect(ll.lat, ll.lon);
       }
       self.downAt = null;
@@ -892,12 +1186,21 @@
         self.zoomDrag = null;
         self.setZoomWindowMode(false);
       }
+      if (e.key === "Escape" && self.dragMode === "measure") self.setMeasureMode(false);
     });
 
     el.addEventListener("mousemove", function (e) {
       if (Object.keys(self.pointers).length) return;
       if (self.opts.onHover) {
         self.opts.onHover(self.pointToLatLon(e.offsetX, e.offsetY));
+      }
+      /* an open measurement follows the cursor so the distance is readable
+         before committing the second point */
+      if (self.dragMode === "measure" && self.measure && !self.measure.fixed) {
+        self.measure.b = self.pointToLatLon(e.offsetX, e.offsetY);
+        if (self.opts.onMeasure) self.opts.onMeasure(self.measureInfo());
+        self.render();
+        return;
       }
       /* asset hover hit-test (10 px radius) */
       var next = null;
@@ -913,14 +1216,39 @@
           if (d2 < best) { best = d2; next = a2; }
         }
       }
-      if (next !== self.hoverAsset) {
+      /* Lines are tested only when no asset point is under the cursor: a
+         point is a more precise target than a line passing near it, and a
+         well sitting on its own pipeline should still identify as the well. */
+      var nLine = null, nLineAt = null, nTrack = null, nTrackAt = null;
+      if (!next) {
+        var pipesUp = self.assetsOn && self.linesOn !== false && self.assetLinesBox && self.pipesVisible();
+        if (pipesUp) {
+          var hitP = self.hitLine(self.assetLinesBox, e.offsetX, e.offsetY);
+          if (hitP) { nLine = hitP.ln; nLineAt = hitP.at; }
+        }
+        if (!nLine && self.cycTracksOn && self.cycShownBox) {
+          var hitT = self.hitLine(self.cycShownBox, e.offsetX, e.offsetY);
+          if (hitT) { nTrack = hitT.ln; nTrackAt = hitT.at; }
+        }
+      }
+      if (next !== self.hoverAsset || nLine !== self.hoverLine || nTrack !== self.hoverTrack) {
         self.hoverAsset = next;
+        self.hoverLine = nLine;
+        self.hoverLineAt = nLineAt;
+        self.hoverTrack = nTrack;
+        self.hoverTrackAt = nTrackAt;
+        el.style.cursor = (nLine || nTrack) ? "pointer" : "";
         self.render();
       }
     });
     el.addEventListener("mouseleave", function () {
       if (self.opts.onHover) self.opts.onHover(null);
-      if (self.hoverAsset) { self.hoverAsset = null; self.render(); }
+      if (self.hoverAsset || self.hoverLine || self.hoverTrack) {
+        self.hoverAsset = null;
+        self.hoverLine = null;
+        self.hoverTrack = null;
+        self.render();
+      }
     });
   };
 

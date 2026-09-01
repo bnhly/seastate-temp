@@ -422,8 +422,15 @@
      depths are DRAWN (200 / 1000 / 3000); the rest serve the click lookup. */
   var BATHY_STYLE = { 200: { a: 0.55, w: 1.3 }, 1000: { a: 0.4, w: 1 }, 3000: { a: 0.26, w: 1 } };
   var WELL_MIN_SCALE = 8; /* px per degree below which well markers hide */
-  var HD_COAST_SCALE = 16; /* px per degree past which coast tiles engage */
-  var HD_PTS_BUDGET = 90000; /* max visible tile vertices before 50m wins */
+  /* The GSHHS coastline carries about twenty times the points of the Natural
+     Earth one it replaced, so both of these move. HD engages later, because
+     at 16 px/deg the view is 60 degrees wide and nobody needs 230 m islands
+     at that scale; by 40 it is 24 degrees and only a handful of five-degree
+     tiles are in view. The budget rises to match, since one Norwegian tile
+     alone is 81,000 points and the old 90,000 ceiling would have disengaged
+     HD exactly where the islands matter most. */
+  var HD_COAST_SCALE = 40; /* px per degree past which coast tiles engage */
+  var HD_PTS_BUDGET = 400000; /* max visible tile vertices before 50m wins */
   /* Pipelines used to hide below scale 4, but the map OPENS at scale 3, so
      they were invisible until you zoomed, which read as "the pipelines never
      arrived". Measured at the default view with 29,269 lines: 5.4 ms with

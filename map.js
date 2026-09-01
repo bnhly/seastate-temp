@@ -328,9 +328,33 @@
     return 30;
   };
 
+  /* Renders coalesce onto animation frames: wheel and drag events arrive
+     faster than the map can draw once the HD coastline is in, and drawing
+     each one synchronously is what made fast zooming freeze. */
   TMMap.prototype.render = function () {
-    this.renderTo(this.ctx, this.cssW, this.cssH, this.dpr, this.view, true);
-    if (this.opts.onView) this.opts.onView();
+    if (this.rafPending) return;
+    var self = this;
+    this.rafPending = true;
+    var raf = window.requestAnimationFrame || function (f) { setTimeout(f, 16); };
+    raf(function () {
+      self.rafPending = false;
+      self.renderTo(self.ctx, self.cssW, self.cssH, self.dpr, self.view, true);
+      if (self.opts.onView) self.opts.onView();
+    });
+  };
+
+  /* Active gesture flag: while zooming or panning, renderTo draws the light
+     50m coastline and skips nothing else; 180 ms after the last movement the
+     HD coastline snaps back in. The 412k-point HD path is why a per-tick
+     full draw could not keep up. */
+  TMMap.prototype.touchInteract = function () {
+    var self = this;
+    this.interacting = true;
+    clearTimeout(this.interactTimer);
+    this.interactTimer = setTimeout(function () {
+      self.interacting = false;
+      self.render();
+    }, 180);
   };
 
   TMMap.prototype.wellsVisible = function () {
@@ -396,7 +420,9 @@
         dpr * (cssW / 2 + (shift - view.cLon) * view.scale),
         dpr * (cssH / 2 + mercY(view.cLat) * view.scale)
       );
-      var landP = (this.hdLandPath && view.scale >= HD_COAST_SCALE) ? this.hdLandPath : this.landPath;
+      var useHD = this.hdLandPath && view.scale >= HD_COAST_SCALE &&
+          (!withChrome || !this.interacting);
+      var landP = useHD ? this.hdLandPath : this.landPath;
       ctx.fillStyle = "#ddd8cb";
       ctx.lineJoin = "round";
       ctx.fill(landP);
@@ -636,6 +662,7 @@
   /* ---------- interaction ---------- */
 
   TMMap.prototype.zoomAt = function (px, py, factor) {
+    this.touchInteract();
     var v = this.view;
     var ns = Math.max(this.minScale, Math.min(MAX_SCALE, v.scale * factor));
     if (ns === v.scale) return;
@@ -691,6 +718,7 @@
         self.zoomDrag.x1 = e.offsetX;
         self.zoomDrag.y1 = e.offsetY;
         self.dragMoved += 1;
+        self.touchInteract();
         self.render();
         return;
       }
@@ -707,6 +735,7 @@
         self.view.cLat = invMercY(mercY(self.view.cLat) + dy / self.view.scale);
         self.clampLat();
         p.x = e.offsetX; p.y = e.offsetY;
+        self.touchInteract();
         self.render();
       } else if (ids.length === 2) {
         p.x = e.offsetX; p.y = e.offsetY;

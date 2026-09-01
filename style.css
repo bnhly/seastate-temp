@@ -34,7 +34,9 @@ html, body {
   line-height: 1.45;
 }
 
-#tm-app { max-width: 1080px; margin: 0 auto; padding: 18px 16px 40px; }
+/* The map and the charts are the reason for the width. Prose keeps its own
+   max-width caps below so lines never run long enough to be hard to read. */
+#tm-app { max-width: 1560px; margin: 0 auto; padding: 18px 20px 40px; }
 
 /* Header */
 .tm-header { padding: 4px 2px 10px; }
@@ -145,7 +147,9 @@ html, body {
   display: flex; flex-direction: column; gap: 3px;
   width: 118px;
 }
-.tm-context { margin-top: 4px; padding: 0 2px; }
+/* Prose, so it is capped for reading length rather than following the
+   shell width. Wide is for the map and the charts, not for sentences. */
+.tm-context { margin-top: 4px; padding: 0 2px; max-width: 105ch; }
 .tm-dir-arrow {
   display: inline-block;
   transform-origin: 50% 50%;
@@ -342,17 +346,22 @@ html, body {
 .tm-headline .tm-big { font-size: 46px; font-weight: 650; line-height: 1; }
 .tm-headline .tm-big-sub { font-size: 15px; color: var(--ink-2); max-width: 560px; }
 
-.tm-charts {
+/* Every figure is a cell of one grid, so they flow: three across on a wide
+   screen, one on a phone, with no fixed row bands. auto-fit plus a minimum
+   does the whole job, so there are no per-row column templates to keep in
+   step with which panels happen to be visible. */
+.tm-figs {
   display: grid;
-  grid-template-columns: 3fr 2fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   gap: 14px;
   margin-top: 14px;
+  align-items: start;
 }
-.tm-charts-b { grid-template-columns: 2fr 3fr; }
-.tm-charts-b.tm-has-vrose { grid-template-columns: 2fr 2fr 3fr; }
-.tm-charts-c { grid-template-columns: 3fr 2fr; }
-.tm-charts-c.tm-solo { grid-template-columns: 1fr; }
-.tm-charts-c.tm-solo .tm-chart { max-width: 560px; }
+/* The row wrappers survive only to carry their ids and the hidden toggling.
+   display:contents lifts their children into .tm-figs. A hidden row still
+   disappears: [hidden] is display:none !important, which outranks this. */
+.tm-charts, .tm-charts-b, .tm-charts-c, .tm-charts-c.tm-solo { display: contents; }
+/* Roses are square and read badly when stretched. */
 .tm-chart-rose { max-width: 320px; margin: 0 auto; }
 .tm-win-controls {
   font-size: 12.5px;
@@ -482,7 +491,7 @@ html, body {
 
 /* Responsive */
 @media (max-width: 760px) {
-  .tm-charts, .tm-table-row, .tm-charts-b.tm-has-vrose { grid-template-columns: 1fr; }
+  .tm-table-row { grid-template-columns: 1fr; }
   .tm-map-wrap { height: 340px; }
   .tm-headline .tm-big { font-size: 38px; }
 }
@@ -503,3 +512,33 @@ html, body {
   background: var(--surface); color: var(--ink); font: inherit;
 }
 .tm-track-ctl #tm-ct-count { margin-left: auto; color: var(--muted); }
+
+/* Sticky answer bar -------------------------------------------------------
+   Shown only once the hero headline has scrolled out of view (app.js drives
+   the hidden attribute from an IntersectionObserver). Sits below Frappe-free
+   territory but above the page; the map's own controls are inside the map. */
+.tm-sticky {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+  background: var(--accent-deep, #14304a);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.tm-sticky-in {
+  max-width: 1560px; margin: 0 auto; padding: 8px 20px;
+  display: flex; align-items: baseline; gap: 12px;
+}
+.tm-sticky-pct { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.1; }
+.tm-sticky-txt {
+  color: #dce6f0; font-size: 13px; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tm-sticky-btn {
+  flex: 0 0 auto; align-self: center;
+  background: #fff; color: #14304a; border: 0; border-radius: 5px;
+  font-size: 12.5px; font-weight: 600; padding: 5px 12px; cursor: pointer;
+}
+.tm-sticky-btn:hover { background: #eaf1f8; }
+@media (max-width: 560px) {
+  .tm-sticky-in { padding: 6px 12px; gap: 8px; }
+  .tm-sticky-pct { font-size: 18px; }
+  .tm-sticky-txt { font-size: 12px; }
+}

@@ -258,7 +258,9 @@
     el.innerHTML = parts.join('<span class="tm-lg-gap"></span>');
   }
 
-  function updateAttribution() {
+  /* The one source list, shared by the page footer and the PDF so the two
+     can never disagree about what fed a result. */
+  function allSources() {
     /* The footer is the ONLY place sources are listed now (the data banner
        was removed 1 Sep 26), so it must be complete from first paint rather
        than filling in as layers load. Each layer's own file still supplies
@@ -271,7 +273,11 @@
       "Environmental Information (public domain).");
     if (state.assetsAttribution) parts.push(state.assetsAttribution);
     if (state.cycAttribution) parts.push(state.cycAttribution);
-    $("tm-attribution").textContent = parts.join(" ");
+    return parts.join(" ");
+  }
+
+  function updateAttribution() {
+    $("tm-attribution").textContent = allSources();
   }
 
   function assetsHaveWells() {
@@ -279,6 +285,35 @@
     if (!d) return false;
     for (i = 0; i < d.assets.length; i++) if (d.assets[i].t === "well") return true;
     return false;
+  }
+
+  /* Sticky answer bar. The values are written whenever the headline is, and
+     visibility is driven by whether the hero headline is still on screen, so
+     the bar only ever appears once the real one has scrolled away. */
+  function setStickyAnswer(pct, txt) {
+    var p = $("tm-sticky-pct"), t = $("tm-sticky-txt");
+    if (!p || !t) return;
+    p.textContent = pct;
+    t.textContent = txt;
+  }
+
+  function initStickyAnswer() {
+    var bar = $("tm-sticky"), head = $("tm-headline"), btn = $("tm-sticky-pdf");
+    if (!bar || !head) return;
+    if (btn) {
+      btn.addEventListener("click", function () {
+        var real = $("tm-pdf");
+        if (real) real.click();
+      });
+    }
+    /* No IntersectionObserver (old Safari) means no bar, which is a fair
+       degradation: the page reads exactly as it did before. */
+    if (!window.IntersectionObserver) return;
+    new window.IntersectionObserver(function (entries) {
+      var e = entries[0];
+      var resultsUp = !$("tm-results").hidden;
+      bar.hidden = !resultsUp || e.isIntersecting;
+    }, { threshold: 0 }).observe(head);
   }
 
   function setBanner() {
@@ -557,6 +592,11 @@
     }
     head.appendChild(big);
     head.appendChild(sub);
+    setStickyAnswer(big.textContent,
+      (lim.p === null || sel.length === 0)
+        ? sub.textContent
+        : "H\u209b above " + state.limit + " m, " + monthsLabel().toLowerCase() +
+          "  \u00b7  " + D.fmtLatLon(state.selected.lat, state.selected.lon));
 
     /* charts */
     var nShow = dispCut();
@@ -593,6 +633,12 @@
     }
     var tpAgg = sel.length ? D.tpHistAgg(res, sel) : null;
     state.lastTpMode = null;
+    /* Cached for the PDF: the report redraws these figures, so it needs the
+       same inputs the on-screen charts were given. */
+    state.pdfRose = hasRose ? prev.rose : null;
+    state.pdfVrose = wrose ? wrose.rose : null;
+    state.pdfTpAgg = tpAgg;
+    state.pdfTpMonths = tpAgg ? null : (res.tp || null);
     row2.hidden = !(hasTp || hasRose || wrose || tpAgg);
     row2.classList.toggle("tm-has-vrose", !!wrose);
     $("tm-vrose-fig").hidden = !wrose;
@@ -795,6 +841,7 @@
     }
     var thr = w.thr[state.winThr], dur = w.edges[state.winDur];
     var vals = D.windowsPerMonth(res, state.winThr, state.winDur);
+    state.pdfWindows = { values: vals, thr: thr, dur: dur };
     window.TMCharts.renderWindows($("tm-win"), {
       values: vals,
       selected: state.monthsOn.slice(),
@@ -1085,6 +1132,7 @@
     var ri = Math.min(state.cycR, cyc.radii.length - 1);
     var s = D.cycSummary(cyc, sel.length ? sel : monthIdxList(), ri);
     var storms12 = cyc.storms.map(function (row) { return row[ri]; });
+    state.pdfCyc = { days: s.perMonth, storms: storms12, radius: cyc.radii[ri] };
     window.TMCharts.renderCyc($("tm-cyc"), {
       days: s.perMonth,
       storms: storms12,
@@ -1145,6 +1193,7 @@
       den += D.MONTH_DAYS[sel[i]];
     }
     var hrs = den > 0 ? num / den : 12;
+    state.pdfDiurnal = { hs: di.hs, wind: di.wind };
     window.TMCharts.renderDiurnal($("tm-di"), {
       hs: di.hs, wind: di.wind,
       nightRise: hrs >= 24 ? null : 12 - hrs / 2,
@@ -1214,6 +1263,21 @@
       ensoLabel: state.lastEnso,
       tpModeLabel: state.lastTpMode,
       daylightLabel: state.lastDaylight,
+      /* Everything below drives the report's extra pages. The charts are
+         redrawn from the same inputs the on-screen versions used; monthExc
+         is the raw per-month exceedance matrix, which only the report
+         tabulates. A null means that panel was not on screen, and the
+         report skips it rather than inventing one. */
+      rose: state.pdfRose || null,
+      vrose: state.pdfVrose || null,
+      tpAgg: state.pdfTpAgg || null,
+      tpMonths: state.pdfTpMonths || null,
+      windows: state.pdfWindows || null,
+      cyc: state.pdfCyc || null,
+      diurnal: state.pdfDiurnal || null,
+      monthExc: res.exc,
+      monthN: res.n,
+      allSources: allSources(),
       shareUrl: shareUrl(),
       assetsShown: !!(state.assetsData && $("tm-assets").checked),
       disclaimer: (state.isDemo ? cfg.disclaimerDemo + " " : "") + cfg.disclaimerLive,
@@ -1239,6 +1303,7 @@
     state.provider = provider;
     state.isDemo = isDemo;
     setBanner();
+    initStickyAnswer();
     var link = $("tm-cta-link");
     link.href = cfg.website;
     link.textContent = "Talk to us at " + cfg.website.replace(/^https?:\/\//, "");

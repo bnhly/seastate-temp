@@ -73,6 +73,17 @@
     and computes wave, wind and weather window statistics in your browser.</p></noscript>
   </header>
 
+  <!-- Condensed answer, pinned once the hero headline scrolls away. The
+       number is what people came for, so it should not vanish while they
+       read the detail panels. Filled by app.js from the same values. -->
+  <div id="tm-sticky" class="tm-sticky" hidden>
+    <div class="tm-sticky-in">
+      <span id="tm-sticky-pct" class="tm-sticky-pct"></span>
+      <span id="tm-sticky-txt" class="tm-sticky-txt"></span>
+      <button type="button" id="tm-sticky-pdf" class="tm-sticky-btn">PDF</button>
+    </div>
+  </div>
+
   <div id="tm-banner" class="tm-banner" hidden></div>
 
   <main>
@@ -161,96 +172,102 @@
       <div id="tm-wind" class="tm-basis tm-context" hidden></div>
       <div id="tm-daylight" class="tm-basis tm-context" hidden></div>
 
-      <div class="tm-charts">
-        <figure class="tm-fig">
-          <figcaption>Chance of exceeding a given wave height</figcaption>
-          <div id="tm-curve" class="tm-chart"></div>
-        </figure>
-        <figure class="tm-fig">
-          <figcaption id="tm-bars-title">Time above limit, by month</figcaption>
-          <div id="tm-bars" class="tm-chart"></div>
-        </figure>
-      </div>
+      <!-- One grid for every figure. The row wrappers below keep their ids
+           (the panels are shown and hidden by row) but go display:contents,
+           so their figures become cells of THIS grid and flow to fill the
+           width instead of each row claiming its own band. -->
+      <div class="tm-figs">
+        <div class="tm-charts">
+          <figure class="tm-fig">
+            <figcaption>Chance of exceeding a given wave height</figcaption>
+            <div id="tm-curve" class="tm-chart"></div>
+          </figure>
+          <figure class="tm-fig">
+            <figcaption id="tm-bars-title">Time above limit, by month</figcaption>
+            <div id="tm-bars" class="tm-chart"></div>
+          </figure>
+        </div>
 
-      <div class="tm-charts tm-charts-b" id="tm-row2" hidden>
-        <figure class="tm-fig">
-          <figcaption id="tm-rose-title">Where waves come from</figcaption>
-          <div id="tm-rose" class="tm-chart tm-chart-rose"></div>
-        </figure>
-        <figure class="tm-fig" id="tm-vrose-fig" hidden>
-          <figcaption>Where wind comes from</figcaption>
-          <div id="tm-vrose" class="tm-chart tm-chart-rose"></div>
-        </figure>
-        <figure class="tm-fig">
-          <figcaption id="tm-tp-title">Typical peak period, by month</figcaption>
-          <div id="tm-tp" class="tm-chart"></div>
-          <p class="tm-fig-note" id="tm-tp-note" hidden>Share of time the dominant (peak)
-          wave period sits in each band. Two humps mean two seas: local wind waves and
-          longer swell taking turns. This is the dominant period over time, not a
-          spectral split of a single moment.</p>
-        </figure>
-      </div>
+        <div class="tm-charts tm-charts-b" id="tm-row2" hidden>
+          <figure class="tm-fig">
+            <figcaption id="tm-rose-title">Where waves come from</figcaption>
+            <div id="tm-rose" class="tm-chart tm-chart-rose"></div>
+          </figure>
+          <figure class="tm-fig" id="tm-vrose-fig" hidden>
+            <figcaption>Where wind comes from</figcaption>
+            <div id="tm-vrose" class="tm-chart tm-chart-rose"></div>
+          </figure>
+          <figure class="tm-fig">
+            <figcaption id="tm-tp-title">Typical peak period, by month</figcaption>
+            <div id="tm-tp" class="tm-chart"></div>
+            <p class="tm-fig-note" id="tm-tp-note" hidden>Share of time the dominant (peak)
+            wave period sits in each band. Two humps mean two seas: local wind waves and
+            longer swell taking turns. This is the dominant period over time, not a
+            spectral split of a single moment.</p>
+          </figure>
+        </div>
 
-      <div class="tm-charts tm-charts-c" id="tm-row3" hidden>
-        <figure class="tm-fig" id="tm-win-fig">
-          <figcaption id="tm-win-title">Weather windows, by month</figcaption>
-          <div class="tm-win-controls">Count spells with H<sub>s</sub> below
-            <select id="tm-win-thr" aria-label="Weather window wave height threshold"></select>
-            lasting at least
-            <select id="tm-win-dur" aria-label="Weather window minimum duration"></select>
-          </div>
-          <div id="tm-win-sum" class="tm-win-sum"></div>
-          <div id="tm-win" class="tm-chart"></div>
-          <p class="tm-fig-note">Long term averages. A spell is a continuous run below the
-          threshold; runs longer than 10 days are counted once.</p>
-        </figure>
-        <figure class="tm-fig" id="tm-cur-fig" hidden>
-          <figcaption>Current and tide at this point</figcaption>
-          <div id="tm-cur" class="tm-cur-lines"></div>
-          <p class="tm-fig-note">Tidal surface and seabed figures are derived from the
-          modelled water-column mean through a standard 1/7th power velocity profile at
-          this water depth; measured profiles vary. Slack-water durations refer to the
-          column mean. Background currents are model values at real depth levels.</p>
-        </figure>
-      </div>
+        <div class="tm-charts tm-charts-c" id="tm-row3" hidden>
+          <figure class="tm-fig" id="tm-win-fig">
+            <figcaption id="tm-win-title">Weather windows, by month</figcaption>
+            <div class="tm-win-controls">Count spells with H<sub>s</sub> below
+              <select id="tm-win-thr" aria-label="Weather window wave height threshold"></select>
+              lasting at least
+              <select id="tm-win-dur" aria-label="Weather window minimum duration"></select>
+            </div>
+            <div id="tm-win-sum" class="tm-win-sum"></div>
+            <div id="tm-win" class="tm-chart"></div>
+            <p class="tm-fig-note">Long term averages. A spell is a continuous run below the
+            threshold; runs longer than 10 days are counted once.</p>
+          </figure>
+          <figure class="tm-fig" id="tm-cur-fig" hidden>
+            <figcaption>Current and tide at this point</figcaption>
+            <div id="tm-cur" class="tm-cur-lines"></div>
+            <p class="tm-fig-note">Tidal surface and seabed figures are derived from the
+            modelled water-column mean through a standard 1/7th power velocity profile at
+            this water depth; measured profiles vary. Slack-water durations refer to the
+            column mean. Background currents are model values at real depth levels.</p>
+          </figure>
+        </div>
 
-      <div class="tm-charts tm-charts-c tm-solo" id="tm-rowd" hidden>
-        <figure class="tm-fig">
-          <figcaption>Across the day</figcaption>
-          <div id="tm-di-sum" class="tm-win-sum"></div>
-          <div id="tm-di" class="tm-chart"></div>
-          <p class="tm-fig-note">Mean conditions by 3 hour slot of the local solar day, for
-          your selected months. Sea-breeze cycles are real near coasts and in the tropics;
-          open ocean swell barely follows the sun, and the chart says so when that is the
-          case here.</p>
-        </figure>
-      </div>
+        <div class="tm-charts tm-charts-c tm-solo" id="tm-rowd" hidden>
+          <figure class="tm-fig">
+            <figcaption>Across the day</figcaption>
+            <div id="tm-di-sum" class="tm-win-sum"></div>
+            <div id="tm-di" class="tm-chart"></div>
+            <p class="tm-fig-note">Mean conditions by 3 hour slot of the local solar day, for
+            your selected months. Sea-breeze cycles are real near coasts and in the tropics;
+            open ocean swell barely follows the sun, and the chart says so when that is the
+            case here.</p>
+          </figure>
+        </div>
 
-      <div class="tm-charts tm-charts-c tm-solo" id="tm-row4" hidden>
-        <figure class="tm-fig" id="tm-cyc-fig">
-          <figcaption>Tropical cyclone exposure</figcaption>
-          <div class="tm-win-controls">Storm activity inside
-            <select id="tm-cyc-r" aria-label="Cyclone exposure distance"></select>
-            of this point</div>
-          <div id="tm-cyc-sum" class="tm-win-sum"></div>
-          <div id="tm-cyc" class="tm-chart"></div>
-          <p class="tm-fig-note" id="tm-cyc-note">Named storms at tropical-storm strength or
-          more, from best tracks since 1980. Operations commonly begin securing and
-          demobilising when a cyclone is inside 1,000 nm, long before local seas respond,
-          so this downtime is additional to the wave statistics above.</p>
-        </figure>
-      </div>
+        <div class="tm-charts tm-charts-c tm-solo" id="tm-row4" hidden>
+          <figure class="tm-fig" id="tm-cyc-fig">
+            <figcaption>Tropical cyclone exposure</figcaption>
+            <div class="tm-win-controls">Storm activity inside
+              <select id="tm-cyc-r" aria-label="Cyclone exposure distance"></select>
+              of this point</div>
+            <div id="tm-cyc-sum" class="tm-win-sum"></div>
+            <div id="tm-cyc" class="tm-chart"></div>
+            <p class="tm-fig-note" id="tm-cyc-note">Named storms at tropical-storm strength or
+            more, from best tracks since 1980. Operations commonly begin securing and
+            demobilising when a cyclone is inside 1,000 nm, long before local seas respond,
+            so this downtime is additional to the wave statistics above.</p>
+          </figure>
+        </div>
 
-      <div class="tm-charts tm-charts-c tm-solo" id="tm-rowe" hidden>
-        <figure class="tm-fig" id="tm-enso-fig">
-          <figcaption>El Ni&#241;o and La Ni&#241;a at this site</figcaption>
-          <div id="tm-enso-sum" class="tm-win-sum"></div>
-          <div class="tm-enso-wrap"><table class="tm-enso-table" id="tm-enso-table"></table></div>
-          <p class="tm-fig-note">History conditioned on the ENSO phase of each month
-          (NOAA's Oceanic Ni&#241;o Index). This is not a forecast: check the current
-          phase and seasonal outlook with NOAA or the Bureau of Meteorology, then read
-          the matching column. Differences of a few percent are within sampling noise.</p>
-        </figure>
+        <div class="tm-charts tm-charts-c tm-solo" id="tm-rowe" hidden>
+          <figure class="tm-fig" id="tm-enso-fig">
+            <figcaption>El Ni&#241;o and La Ni&#241;a at this site</figcaption>
+            <div id="tm-enso-sum" class="tm-win-sum"></div>
+            <div class="tm-enso-wrap"><table class="tm-enso-table" id="tm-enso-table"></table></div>
+            <p class="tm-fig-note">History conditioned on the ENSO phase of each month
+            (NOAA's Oceanic Ni&#241;o Index). This is not a forecast: check the current
+            phase and seasonal outlook with NOAA or the Bureau of Meteorology, then read
+            the matching column. Differences of a few percent are within sampling noise.</p>
+          </figure>
+        </div>
       </div>
 
       <div class="tm-table-row">

@@ -108,7 +108,14 @@
     var iw = w - ml - mr, ih = h - mt - mb;
     var vmax = 0, i;
     for (i = 0; i < 12; i++) if (spec.values[i] !== null && spec.values[i] > vmax) vmax = spec.values[i];
-    var caps = [4, 8, 12, 20, 40, 60, 80, 100], niceMax = 100;
+    /* spec.unit defaults to "%" because most of these charts are percentages,
+       but weather-window spell counts and cyclone storm-days are not, and
+       labelling a count as a percentage is just wrong. When a unit is given
+       the scale is chosen from the data instead of the percentage ladder. */
+    var unit = spec.unit === undefined ? "%" : spec.unit;
+    var caps = unit === "%" ? [4, 8, 12, 20, 40, 60, 80, 100]
+                            : [1, 2, 4, 5, 8, 10, 16, 20, 40, 60, 100];
+    var niceMax = caps[caps.length - 1];
     for (i = 0; i < caps.length; i++) { if (vmax * 1.06 <= caps[i]) { niceMax = caps[i]; break; } }
     function Y(p) { return y0 + mb + (p / niceMax) * ih; }
     var g, lbl;
@@ -116,7 +123,7 @@
       var gv = niceMax * g / 4;
       page.drawLine({ start: { x: x0 + ml, y: Y(gv) }, end: { x: x0 + ml + iw, y: Y(gv) },
         thickness: 0.5, color: rgb(P, g === 0 ? COL.baseline : COL.grid) });
-      lbl = (niceMax < 20 && gv % 1 ? gv.toFixed(1) : String(Math.round(gv))) + "%";
+      lbl = (niceMax < 20 && gv % 1 ? gv.toFixed(1) : String(Math.round(gv))) + unit;
       page.drawText(lbl, { x: x0 + ml - 4 - fonts.reg.widthOfTextAtSize(lbl, 6.5), y: Y(gv) - 2.2,
         size: 6.5, font: fonts.reg, color: rgb(P, COL.muted) });
     }
@@ -152,6 +159,124 @@
     }).then(function (buf) {
       return doc.embedPng(buf);
     }).catch(function () { return null; });
+  }
+
+
+  /* ---------- helpers for the continuation pages ----------------------- */
+
+  /* Every page after the first gets the same slim header and a page number,
+     so a printed report still reads in order if the staple comes out. The
+     footer rule and page count are stamped at the end, once the total is
+     known. */
+  function addPage(doc, P, fonts, logo, title, sub) {
+    var page = doc.addPage([PAGE_W, PAGE_H]);
+    if (logo) {
+      var h = 15;
+      page.drawImage(logo, { x: M, y: PAGE_H - M - 16, width: logo.width * (h / logo.height), height: h });
+    }
+    var tw = fonts.bold.widthOfTextAtSize(title, 11);
+    page.drawText(title, { x: PAGE_W - M - tw, y: PAGE_H - M - 8, size: 11, font: fonts.bold, color: rgb(P, COL.ink) });
+    if (sub) {
+      var sw = fonts.reg.widthOfTextAtSize(sub, 8);
+      page.drawText(sub, { x: PAGE_W - M - sw, y: PAGE_H - M - 19, size: 8, font: fonts.reg, color: rgb(P, COL.muted) });
+    }
+    page.drawLine({ start: { x: M, y: PAGE_H - M - 26 }, end: { x: PAGE_W - M, y: PAGE_H - M - 26 },
+                    thickness: 0.8, color: rgb(P, COL.navy) });
+    return page;
+  }
+
+  function sectionHead(P, page, fonts, x, y, text) {
+    page.drawText(text.toUpperCase(), { x: x, y: y, size: 7.5, font: fonts.bold, color: rgb(P, COL.muted) });
+    return y - 13;
+  }
+
+  /* A compass rose. The sector count comes from the data (12 sectors of 30
+     degrees today), each petal drawn as a hatched triangle because pdf-lib
+     has no arc primitive and a wedge is indistinguishable from one at this
+     size. Null sectors are skipped rather than drawn as zero. */
+  function drawRosePdf(P, page, fonts, cx, cy, r, rose) {
+    var i, k, maxv = 0;
+    for (i = 0; i < rose.length; i++) if (rose[i] > maxv) maxv = rose[i];
+    if (maxv <= 0) return;
+    /* two reference rings so the petals can be read as percentages */
+    for (k = 1; k <= 2; k++) {
+      var rr = r * k / 2, seg = [], a;
+      for (a = 0; a <= 360; a += 12) {
+        seg.push({ x: cx + rr * Math.sin(a * Math.PI / 180), y: cy + rr * Math.cos(a * Math.PI / 180) });
+      }
+      for (i = 1; i < seg.length; i++) {
+        page.drawLine({ start: seg[i - 1], end: seg[i], thickness: 0.3, color: rgb(P, COL.baseline) });
+      }
+    }
+    var n = rose.length, half = Math.PI / n;
+    for (i = 0; i < n; i++) {
+      if (!rose[i]) continue;
+      var ang = (i / n) * 2 * Math.PI;          /* 0 = north, clockwise */
+      var len = r * (rose[i] / maxv);
+      var p0 = { x: cx, y: cy };
+      var p1 = { x: cx + len * Math.sin(ang - half), y: cy + len * Math.cos(ang - half) };
+      var p2 = { x: cx + len * Math.sin(ang + half), y: cy + len * Math.cos(ang + half) };
+      page.drawLine({ start: p0, end: p1, thickness: 0.6, color: rgb(P, COL.series) });
+      page.drawLine({ start: p1, end: p2, thickness: 0.6, color: rgb(P, COL.series) });
+      page.drawLine({ start: p2, end: p0, thickness: 0.6, color: rgb(P, COL.series) });
+      /* fill by hatching: no polygon primitive, and a hollow petal reads as
+         an outline drawing rather than a chart */
+      var t;
+      for (t = 0.08; t < 1; t += 0.08) {
+        page.drawLine({
+          start: { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t },
+          end: { x: p0.x + (p2.x - p0.x) * t, y: p0.y + (p2.y - p0.y) * t },
+          thickness: 0.7, color: rgb(P, COL.series)
+        });
+      }
+    }
+    var lbl = [["N", 0, r + 7], ["E", r + 6, 0], ["S", 0, -(r + 9)], ["W", -(r + 8), 0]];
+    for (i = 0; i < lbl.length; i++) {
+      page.drawText(lbl[i][0], { x: cx + lbl[i][1] - 2, y: cy + lbl[i][2] - 2, size: 6.5,
+        font: fonts.reg, color: rgb(P, COL.muted) });
+    }
+    page.drawText(Math.round(maxv) + "%", { x: cx + 2, y: cy + r - 6, size: 5.5,
+      font: fonts.reg, color: rgb(P, COL.muted) });
+  }
+
+  /* Peak-period distribution: one bar per band. */
+  function drawHistPdf(P, page, fonts, x0, y0, w, h, spec) {
+    var v = spec.values, i, maxv = 0;
+    for (i = 0; i < v.length; i++) if (v[i] > maxv) maxv = v[i];
+    if (maxv <= 0) maxv = 1;
+    /* Round the top up to something readable, then label it: bars without a
+       scale show shape but no magnitude. */
+    /* halve cleanly so the mid gridline is not a rounded oddity like 13% */
+    var caps = [2, 4, 10, 20, 30, 40, 50, 60, 80, 100], nice = 100, ci;
+    for (ci = 0; ci < caps.length; ci++) { if (maxv * 1.06 <= caps[ci]) { nice = caps[ci]; break; } }
+    var ml2 = 22, iw2 = w - ml2, ih2 = h - 12, g2;
+    for (g2 = 0; g2 <= 2; g2++) {
+      var gv2 = nice * g2 / 2, gy = y0 + (gv2 / nice) * ih2;
+      page.drawLine({ start: { x: x0 + ml2, y: gy }, end: { x: x0 + w, y: gy },
+        thickness: 0.5, color: rgb(P, g2 === 0 ? COL.baseline : COL.grid) });
+      var gl = String(Math.round(gv2)) + "%";
+      page.drawText(gl, { x: x0 + ml2 - 3 - fonts.reg.widthOfTextAtSize(gl, 6), y: gy - 2,
+        size: 6, font: fonts.reg, color: rgb(P, COL.muted) });
+    }
+    maxv = nice;
+    x0 = x0 + ml2;
+    w = iw2;
+    h = ih2 + 12;
+    var bw = w / v.length;
+    for (i = 0; i < v.length; i++) {
+      var bh = (v[i] / maxv) * (h - 12);
+      if (bh > 0) {
+        page.drawRectangle({ x: x0 + i * bw + bw * 0.15, y: y0, width: bw * 0.7, height: bh,
+          color: rgb(P, COL.series) });
+      }
+      if (i % 2 === 0) {
+        var lb = String(spec.t0 + i * spec.step);
+        page.drawText(lb, { x: x0 + i * bw + bw / 2 - fonts.reg.widthOfTextAtSize(lb, 6) / 2,
+          y: y0 - 8, size: 6, font: fonts.reg, color: rgb(P, COL.muted) });
+      }
+    }
+    page.drawText("peak period (s)", { x: x0 + w / 2 - 18, y: y0 - 17, size: 6,
+      font: fonts.reg, color: rgb(P, COL.muted) });
   }
 
   function generate(state) {
@@ -320,6 +445,193 @@
             var endY = drawWrapped(page, fonts.reg, disc, M, fy - 11, 6.6, PAGE_W - 2 * M, 8.2, rgb(P, COL.muted));
             page.drawText(state.cfg.companyName + " | " + state.cfg.website.replace(/^https?:\/\//, ""),
               { x: M, y: endY - 4, size: 7.5, font: fonts.bold, color: rgb(P, COL.navy) });
+
+            /* ---------- page 2: month by month ---------- */
+            var hdrSub = state.latLonLabel + "  " + monthListLabel(state);
+            var p2 = addPage(doc, P, fonts, logo, "Month by month", hdrSub);
+            var y2 = PAGE_H - M - 44;
+
+            y2 = sectionHead(P, p2, fonts, M, y2, "Time above " + state.limit + " m, by month");
+            drawBarsPdf(P, p2, fonts, M, y2 - 150, PAGE_W - 2 * M, 150,
+              { values: state.monthlyAtLimit, selected: state.selectedFlags, monthNames: state.monthNames });
+            y2 = y2 - 150 - 26;
+
+            /* The matrix is the part a one page summary could never carry:
+               every month against every threshold, which is what someone
+               planning a campaign window actually reads. */
+            y2 = sectionHead(P, p2, fonts, M, y2, "Percentage of time above each wave height, by month");
+            var thr = state.thresholds, nT = Math.min(thr.length, 9);
+            var cw = (PAGE_W - 2 * M - 46) / nT;
+            var hx = M + 46, ti, mi;
+            for (ti = 0; ti < nT; ti++) {
+              var th = thr[ti].toFixed(1);
+              p2.drawText(th, { x: hx + ti * cw + cw / 2 - fonts.bold.widthOfTextAtSize(th, 7) / 2,
+                y: y2, size: 7, font: fonts.bold, color: rgb(P, COL.ink2) });
+            }
+            p2.drawText("significant wave height (m)", { x: M, y: y2 + 12, size: 6,
+              font: fonts.reg, color: rgb(P, COL.muted) });
+            y2 -= 5;
+            p2.drawLine({ start: { x: M, y: y2 }, end: { x: PAGE_W - M, y: y2 }, thickness: 0.6, color: rgb(P, COL.baseline) });
+            y2 -= 11;
+            for (mi = 0; mi < 12; mi++) {
+              var on = state.selectedFlags[mi];
+              var mcol = on ? COL.ink : COL.dim;
+              p2.drawText(state.monthNames[mi], { x: M, y: y2, size: 7.5,
+                font: on ? fonts.bold : fonts.reg, color: rgb(P, mcol) });
+              for (ti = 0; ti < nT; ti++) {
+                var pv2 = (state.monthN[mi] > 0 && state.monthExc[mi]) ? state.monthExc[mi][ti] : null;
+                var cell = pv2 === null || pv2 === undefined
+                  ? "-" : window.TMData.fmtPct(pv2).replace("<", "under ");
+                p2.drawText(cell, { x: hx + ti * cw + cw / 2 - fonts.reg.widthOfTextAtSize(cell, 7) / 2,
+                  y: y2, size: 7, font: fonts.reg, color: rgb(P, mcol) });
+              }
+              y2 -= 11.5;
+            }
+            y2 -= 6;
+            drawWrapped(p2, fonts.reg,
+              "Months in bold are the ones selected for the headline figure on page 1. " +
+              "Every month is shown so a different working window can be judged from the same table.",
+              M, y2, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted));
+            y2 -= 24;
+
+            if (state.windows) {
+              y2 = sectionHead(P, p2, fonts, M, y2, "Weather windows by month: spells below " +
+                state.windows.thr + " m lasting " + state.windows.dur + " h or more");
+              drawBarsPdf(P, p2, fonts, M, y2 - 130, PAGE_W - 2 * M, 130,
+                { values: state.windows.values, selected: state.selectedFlags,
+                  monthNames: state.monthNames, unit: "" });
+              y2 = y2 - 130 - 14;
+              if (state.windowsLabel) {
+                drawWrapped(p2, fonts.reg, state.windowsLabel, M, y2, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink2));
+              }
+            }
+
+            /* ---------- page 3: wind and sea state ---------- */
+            var p3 = addPage(doc, P, fonts, logo, "Wind and sea state", hdrSub);
+            var y3 = PAGE_H - M - 44;
+            var colW = (PAGE_W - 2 * M - 20) / 2;
+
+            if (state.rose || state.vrose) {
+              y3 = sectionHead(P, p3, fonts, M, y3, "Direction");
+              var roseR = 62, roseY = y3 - roseR - 12;
+              var both = !!(state.rose && state.vrose);
+              function placeRose(cx, title, data) {
+                var tw2 = fonts.bold.widthOfTextAtSize(title, 8);
+                p3.drawText(title, { x: cx - tw2 / 2, y: y3 - 2, size: 8,
+                  font: fonts.bold, color: rgb(P, COL.ink2) });
+                drawRosePdf(P, p3, fonts, cx, roseY, roseR, data);
+              }
+              if (both) {
+                placeRose(M + colW / 2, "Where waves come from", state.rose);
+                placeRose(M + colW + 20 + colW / 2, "Where wind comes from", state.vrose);
+              } else if (state.rose) {
+                placeRose(PAGE_W / 2, "Where waves come from", state.rose);
+              } else {
+                placeRose(PAGE_W / 2, "Where wind comes from", state.vrose);
+              }
+              y3 = roseY - roseR - 26;
+              drawWrapped(p3, fonts.reg,
+                "Petals point the way the waves or wind come FROM. The outer ring is the " +
+                "most common sector; the figure beside it is its share of the time.",
+                M, y3, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted));
+              y3 -= 22;
+            }
+
+            if (state.tpAgg) {
+              y3 = sectionHead(P, p3, fonts, M, y3, "Peak period, share of time in each band");
+              drawHistPdf(P, p3, fonts, M, y3 - 118, PAGE_W - 2 * M, 118,
+                { values: state.tpAgg.pct, t0: state.tpAgg.t0, step: state.tpAgg.step });
+              y3 = y3 - 118 - 24;
+              if (state.tpModeLabel) {
+                y3 = drawWrapped(p3, fonts.reg, state.tpModeLabel, M, y3, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink2)) - 4;
+              }
+              y3 = drawWrapped(p3, fonts.reg,
+                "Two humps mean two seas: local wind waves and longer swell taking turns. " +
+                "This is the dominant period over time, not a spectral split of a single sea.",
+                M, y3, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted)) - 16;
+            }
+
+            var facts = [];
+            if (state.windLabel) facts.push(["Wind", state.windLabel]);
+            if (state.extremesLabel) facts.push(["Extreme sea states", state.extremesLabel]);
+            if (state.prevailingLabel) facts.push(["Prevailing conditions", state.prevailingLabel]);
+            if (state.daylightLabel) facts.push(["Daylight", state.daylightLabel]);
+            if (facts.length) {
+              y3 = sectionHead(P, p3, fonts, M, y3, "In numbers");
+              var fi;
+              for (fi = 0; fi < facts.length && y3 > 70; fi++) {
+                p3.drawText(facts[fi][0].toUpperCase(), { x: M, y: y3, size: 6.5,
+                  font: fonts.bold, color: rgb(P, COL.muted) });
+                y3 = drawWrapped(p3, fonts.reg, facts[fi][1], M, y3 - 10, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 8;
+              }
+            }
+
+            /* ---------- page 4: cyclones, tide, notes ---------- */
+            var p4 = addPage(doc, P, fonts, logo, "Exposure and notes", hdrSub);
+            var y4 = PAGE_H - M - 44;
+
+            if (state.cyc) {
+              y4 = sectionHead(P, p4, fonts, M, y4, "Tropical cyclone exposure within " +
+                state.cyc.radius + " nm, storm-days per month");
+              drawBarsPdf(P, p4, fonts, M, y4 - 130, PAGE_W - 2 * M, 130,
+                { values: state.cyc.days, selected: state.selectedFlags,
+                  monthNames: state.monthNames, unit: "" });
+              y4 = y4 - 130 - 16;
+              if (state.cycLabel) {
+                y4 = drawWrapped(p4, fonts.reg, state.cycLabel, M, y4, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink2)) - 16;
+              }
+            }
+
+            if (state.diurnal && state.diurnalLabel) {
+              y4 = sectionHead(P, p4, fonts, M, y4, "Across the day");
+              y4 = drawWrapped(p4, fonts.reg, state.diurnalLabel, M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 16;
+            }
+
+            if (state.curLines && state.curLines.length) {
+              y4 = sectionHead(P, p4, fonts, M, y4, "Current and tide");
+              var ci;
+              for (ci = 0; ci < state.curLines.length && y4 > 150; ci++) {
+                y4 = drawWrapped(p4, fonts.reg, state.curLines[ci], M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 5;
+              }
+              y4 -= 12;
+            }
+
+            if (state.ensoLabel) {
+              y4 = sectionHead(P, p4, fonts, M, y4, "El Nino and La Nina");
+              y4 = drawWrapped(p4, fonts.reg, state.ensoLabel, M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 16;
+            }
+
+            y4 = sectionHead(P, p4, fonts, M, y4, "How to read this report");
+            y4 = drawWrapped(p4, fonts.reg,
+              "These are long term climatological statistics, not a forecast. They describe how the " +
+              "sea behaved at this point over the record, month by month, which is what early stage " +
+              "planning needs. They do not tell you what next Tuesday looks like, and they will " +
+              "underestimate extremes close to coastlines, in sheltered or shallow water, and in " +
+              "tropical cyclone conditions. Real operability also depends on spectral detail, " +
+              "current and tide, and how your vessel responds.",
+              M, y4, 8, PAGE_W - 2 * M, 10.5, rgb(P, COL.ink2)) - 18;
+
+            y4 = sectionHead(P, p4, fonts, M, y4, "Sources");
+            y4 = drawWrapped(p4, fonts.reg, state.allSources || state.meta.attribution, M, y4, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted)) - 16;
+
+            /* closing call to action, mirroring page 1 */
+            p4.drawRectangle({ x: M, y: 92, width: PAGE_W - 2 * M, height: 54, color: rgb(P, COL.navy) });
+            p4.drawText("Planning a subsea lift?", { x: M + 14, y: 124, size: 12,
+              font: fonts.bold, color: P.rgb(1, 1, 1) });
+            drawWrapped(p4, fonts.reg,
+              "Weather windows decide when a lift can go. Thrust Maritime provides specialist " +
+              "lifting solutions for subsea operations. " + state.cfg.website.replace(/^https?:\/\//, ""),
+              M + 14, 110, 8.5, PAGE_W - 2 * M - 28, 11, P.rgb(0.87, 0.91, 0.95));
+
+            /* ---------- page numbers, once the total is known ---------- */
+            var pages = doc.getPages(), pi2;
+            for (pi2 = 0; pi2 < pages.length; pi2++) {
+              var lbl2 = "Page " + (pi2 + 1) + " of " + pages.length;
+              pages[pi2].drawText(lbl2, {
+                x: PAGE_W - M - fonts.reg.widthOfTextAtSize(lbl2, 7),
+                y: 60, size: 7, font: fonts.reg, color: rgb(P, COL.muted)
+              });
+            }
 
             return doc.save();
           });

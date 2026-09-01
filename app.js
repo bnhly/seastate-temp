@@ -243,6 +243,9 @@
       /* Only the contours actually crossing the view (Ben, 1 Sep 26). The
          fixed list named 1,000 m and 3,000 m on a shelf where neither line
          is anywhere on screen. */
+      /* Natural Earth's three levels have fixed weights; the ETOPO ladder is
+         chosen at run time, so anything not listed falls back to a plain
+         hairline rather than vanishing. */
       var DSTYLE = { 200: "border-top-width:2px", 1000: "border-top-width:1px;opacity:.72",
                      3000: "border-top-width:1px;opacity:.45" };
       var inView = state.map ? state.map.depthsInView() : [200, 1000, 3000];
@@ -252,7 +255,8 @@
           (DSTYLE[inView[di]] || "border-top-width:1px") + '"></span>' +
           inView[di].toLocaleString() + ' m</span>';
       }
-      parts.push('<span class="tm-lg-title">Depth</span>' + (drows ||
+      var fine = state.map && state.map.fineContoursWanted() && state.map.fineContours;
+      parts.push('<span class="tm-lg-title">Depth' + (fine ? " (ETOPO)" : "") + '</span>' + (drows ||
         '<span class="tm-lg-row tm-lg-none">none in view</span>'));
     }
     if (state.assetsData && $("tm-assets").checked) {
@@ -294,6 +298,64 @@
     if (state.assetsAttribution) parts.push(state.assetsAttribution);
     if (state.cycAttribution) parts.push(state.cycAttribution);
     return parts.join(" ");
+  }
+
+  /* Fine depth contours -------------------------------------------------
+     Ben, 1 Sep 26: zooming in USED to show fewer contours, because Natural
+     Earth only carries 200 / 1000 / 2000 / 3000 m, so a deep-water view had
+     one line in it and a shelf view had none. These come from the 0.1 degree
+     ETOPO tiles instead, with the level set chosen from the depths actually
+     in view, so a shelf gets 20 m spacing and an abyssal plain gets 500. */
+  var FINE_LADDERS = [
+    /* maxDepth in view, levels to draw */
+    [60,    [10, 20, 30, 40, 50]],
+    [150,   [20, 50, 75, 100, 125, 150]],
+    [400,   [50, 100, 150, 200, 300, 400]],
+    [1200,  [100, 200, 400, 600, 800, 1000]],
+    [3000,  [200, 500, 1000, 1500, 2000, 2500, 3000]],
+    [99999, [500, 1000, 2000, 3000, 4000, 5000, 6000]]
+  ];
+
+  function fineLevelsFor(maxDepth) {
+    var i;
+    for (i = 0; i < FINE_LADDERS.length; i++) {
+      if (maxDepth <= FINE_LADDERS[i][0]) return FINE_LADDERS[i][1];
+    }
+    return FINE_LADDERS[FINE_LADDERS.length - 1][1];
+  }
+
+  function refreshFineContours() {
+    if (!state.map || !state.map.fineContoursWanted()) {
+      if (state.fineKey) { state.fineKey = null; state.map.setFineContours(null); }
+      return;
+    }
+    var b = state.map.viewBounds();
+    /* Round the box so small mouse movements do not re-request the same
+       thing; the contours are only redrawn when the view really moves. */
+    var q = 0.25;
+    var key = [Math.floor(b.lat0 / q), Math.ceil(b.lat1 / q),
+               Math.floor(b.lon0 / q), Math.ceil(b.lon1 / q)].join(",");
+    if (key === state.fineKey) return;
+    state.fineKey = key;
+    /* The depth at the selected point sets the ladder. state.depthExact is
+       what the ETOPO lookup stores; with nothing selected yet, assume deep
+       water so the first draw is not a mess of shelf contours. */
+    var dm = (state.depthExact && state.depthExact.val && state.depthExact.val.m) || null;
+    var lvl = fineLevelsFor(dm || 3000);
+    D.contoursForBox(cfg.dataBase, b.lat0, b.lat1, b.lon0, b.lon1, lvl)
+      .then(function (sets) {
+        /* a later view may have won the race while the tiles were fetched */
+        if (state.fineKey !== key) return;
+        state.map.setFineContours(sets);
+        /* the tiles land after the view has settled, so the legend has to be
+           told separately; onView has already been and gone by now */
+        state.depthsShown = state.map.depthsInView().join(",");
+        refreshLegend();
+      })
+      .catch(function () {
+        state.map.setFineContours(null);
+        refreshLegend();
+      });
   }
 
   function updateAttribution() {
@@ -1385,6 +1447,7 @@
           refreshLegend();
         }
         if (state.map && state.map.hdWanted()) ensureCoastHD();
+        refreshFineContours();
       }
     });
     if (window.TM_PLACES) state.map.setPlaces(window.TM_PLACES);

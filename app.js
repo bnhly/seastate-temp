@@ -355,6 +355,8 @@
     var results = $("tm-results");
     results.hidden = false;
     $("tm-side-results").hidden = false;
+    /* a new site changes which storms count as "near here" */
+    if (state.applyTrackFilter) state.applyTrackFilter();
 
     var combined = D.combineMonths(res, sel, state.provider.thresholds);
     var lim = D.interpExceedance(state.provider.thresholds, combined.p, state.limit);
@@ -1057,6 +1059,7 @@
   }
 
   function renderCycPanel(cyc, sel) {
+    state.cycData = cyc;          /* the track filter reads radii from here */
     var selR = $("tm-cyc-r"), i, o;
     if (!selR.options.length) {
       for (i = 0; i < cyc.radii.length; i++) {
@@ -1273,6 +1276,7 @@
     $("tm-cyc-r").addEventListener("change", function () {
       state.cycR = parseInt(this.value, 10) || 0;
       renderResults();
+      if (state.applyTrackFilter) state.applyTrackFilter();
     });
     $("tm-shade").addEventListener("change", refreshHeat);
     $("tm-pdf").addEventListener("click", buildPdf);
@@ -1324,17 +1328,108 @@
       }).catch(function () { return false; });
     }
 
+    /* Track filters. Forty-odd years of tracks at once is a smear (4,170 on
+       the real set), and most of them never came near the site being looked
+       at. The default filter is therefore the operational one: only storms
+       that passed within the exposure ring chosen in the cyclone panel.
+       Year range and a severe-only tick narrow it further. IBTrACS tracks
+       carry no month, so months are deliberately not offered here. */
+    function trackRadiusNm() {
+      var cyc = state.cycData;
+      if (!cyc || !cyc.radii || !cyc.radii.length) return 1000;
+      var ri = (state.cycR === null || state.cycR === undefined)
+        ? cyc.radii.length - 1 : Math.min(state.cycR, cyc.radii.length - 1);
+      return cyc.radii[ri];
+    }
+
+    function trackNearNm(track, lat, lon) {
+      var best = 1e9, i, p, dlat, dlon, d;
+      var kx = Math.cos(lat * Math.PI / 180) * 60;
+      for (i = 0; i < track.pts.length; i++) {
+        p = track.pts[i];
+        dlat = (p[0] - lat) * 60;
+        dlon = p[1] - lon;
+        while (dlon < -180) dlon += 360;
+        while (dlon > 180) dlon -= 360;
+        dlon *= kx;
+        d = dlat * dlat + dlon * dlon;
+        if (d < best) best = d;
+      }
+      return Math.sqrt(best);
+    }
+
+    function applyTrackFilter() {
+      if (!state.cycTracksLoaded || !state.map) return;
+      var ctl = $("tm-ct-ctl");
+      var on = $("tm-cyctracks").checked;
+      ctl.hidden = !on;
+      if (!on) return;
+      var cell = state.cellData && state.cellData.cell;
+      var nearBox = $("tm-ct-near");
+      $("tm-ct-near-lab").hidden = !cell;
+      var near = !!cell && nearBox.checked;
+      var radius = trackRadiusNm();
+      var y0 = parseInt($("tm-ct-y0").value, 10);
+      var y1 = parseInt($("tm-ct-y1").value, 10);
+      if (isNaN(y0)) y0 = -9999;
+      if (isNaN(y1)) y1 = 9999;
+      var major = $("tm-ct-major").checked;
+      var total = (state.map.cycTracksAll || []).length;
+      var kept = state.map.setCycTrackFilter(function (t) {
+        if (t.y < y0 || t.y > y1) return false;
+        if (major && t.w < 96) return false;
+        if (near && trackNearNm(t, cell.lat, cell.lon) > radius) return false;
+        return true;
+      });
+      /* update only a text span: rebuilding the label's children moved the
+         checkbox mid-interaction and swallowed the untick */
+      $("tm-ct-near-r").textContent = radius.toLocaleString() + " nm";
+      $("tm-ct-count").textContent =
+        "showing " + kept.toLocaleString() + " of " + total.toLocaleString() + " storms" +
+        (near ? " within " + radius.toLocaleString() + " nm" : "");
+    }
+    state.applyTrackFilter = applyTrackFilter;
+
+    function seedTrackYears() {
+      var all = state.map.cycTracksAll || [];
+      if (!all.length || $("tm-ct-y0").value) return;
+      var lo = 9999, hi = -9999, i;
+      for (i = 0; i < all.length; i++) {
+        if (all[i].y < lo) lo = all[i].y;
+        if (all[i].y > hi) hi = all[i].y;
+      }
+      $("tm-ct-y0").value = String(lo);
+      $("tm-ct-y1").value = String(hi);
+      $("tm-ct-y0").min = $("tm-ct-y1").min = String(lo);
+      $("tm-ct-y0").max = $("tm-ct-y1").max = String(hi);
+    }
+
+    ["tm-ct-near", "tm-ct-major"].forEach(function (id) {
+      $(id).addEventListener("change", applyTrackFilter);
+    });
+    ["tm-ct-y0", "tm-ct-y1"].forEach(function (id) {
+      $(id).addEventListener("change", applyTrackFilter);
+      $(id).addEventListener("input", function () {
+        clearTimeout(state.ctTimer);
+        state.ctTimer = setTimeout(applyTrackFilter, 250);
+      });
+    });
+
     $("tm-cyctracks").addEventListener("change", function () {
       var box = this;
       if (box.checked && !state.cycTracksLoaded) {
         ensureCycTracks().then(function (ok) {
           if (!ok) box.checked = false;
           state.map.setCycTracksVisible(box.checked);
+          seedTrackYears();
+          applyTrackFilter();
           refreshLegend();
         });
         return;
       }
       state.map.setCycTracksVisible(box.checked);
+      seedTrackYears();
+      applyTrackFilter();
       refreshLegend();
     });
 

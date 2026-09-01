@@ -91,6 +91,16 @@
         <label id="tm-assets-toggle" hidden><input type="checkbox" id="tm-assets" checked> Oil and gas assets</label>
         <label id="tm-cyctracks-label" hidden><input type="checkbox" id="tm-cyctracks"> Cyclone tracks</label>
       </div>
+      <div class="tm-track-ctl" id="tm-ct-ctl" hidden>
+        <span class="tm-f-label">Show storms:</span>
+        <label id="tm-ct-near-lab"><input type="checkbox" id="tm-ct-near" checked>
+          that passed within <span id="tm-ct-near-r">1,000 nm</span> of this location</label>
+        <label class="tm-ct-years">years
+          <input id="tm-ct-y0" type="number" inputmode="numeric" step="1">
+          to <input id="tm-ct-y1" type="number" inputmode="numeric" step="1"></label>
+        <label><input type="checkbox" id="tm-ct-major"> severe only (Cat 3+)</label>
+        <span id="tm-ct-count"></span>
+      </div>
       <div class="tm-asset-filters" id="tm-asset-filters" hidden>
         <span class="tm-f-label">Filter assets:</span>
         <label><input type="checkbox" id="tm-f-wells" checked> wells</label>

@@ -230,10 +230,20 @@
         '<span class="tm-lg-scale"><span>0</span><span>6+ m</span></span>');
     }
     if ($("tm-contours").checked && state.bathyReady) {
-      parts.push('<span class="tm-lg-title">Depth</span>' +
-        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:2px"></span>200 m</span>' +
-        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:1px;opacity:.72"></span>1,000 m</span>' +
-        '<span class="tm-lg-row"><span class="tm-lg-line" style="border-top-width:1px;opacity:.45"></span>3,000 m</span>');
+      /* Only the contours actually crossing the view (Ben, 1 Sep 26). The
+         fixed list named 1,000 m and 3,000 m on a shelf where neither line
+         is anywhere on screen. */
+      var DSTYLE = { 200: "border-top-width:2px", 1000: "border-top-width:1px;opacity:.72",
+                     3000: "border-top-width:1px;opacity:.45" };
+      var inView = state.map ? state.map.depthsInView() : [200, 1000, 3000];
+      var drows = "", di;
+      for (di = 0; di < inView.length; di++) {
+        drows += '<span class="tm-lg-row"><span class="tm-lg-line" style="' +
+          (DSTYLE[inView[di]] || "border-top-width:1px") + '"></span>' +
+          inView[di].toLocaleString() + ' m</span>';
+      }
+      parts.push('<span class="tm-lg-title">Depth</span>' + (drows ||
+        '<span class="tm-lg-row tm-lg-none">none in view</span>'));
     }
     if (state.assetsData && $("tm-assets").checked) {
       var rows = '<span class="tm-lg-title">Assets' + (assetsAreDemo() ? " (demo)" : "") + '</span>' +
@@ -1307,6 +1317,10 @@
     var link = $("tm-cta-link");
     link.href = cfg.website;
     link.textContent = "Talk to us at " + cfg.website.replace(/^https?:\/\//, "");
+    /* Exposed for diagnosis on the live site, and so tests can ask the map
+       where something is instead of guessing pixel coordinates. Read-only by
+       convention: nothing in the app reads it back. */
+    window.TM_MAP = null;
     state.map = new window.TMMap($("tm-map"), {
       onSelect: onSelect,
       onHover: function (ll) {
@@ -1315,25 +1329,49 @@
         c.hidden = false;
         c.textContent = D.fmtLatLon(ll.lat, ll.lon);
       },
+      onMeasure: function (mi) {
+        var out = $("tm-measure-out");
+        if (!mi) {
+          out.hidden = true;
+          out.innerHTML = "";
+          return;
+        }
+        out.hidden = false;
+        out.innerHTML = "<b>" + mi.label + "</b>" +
+          '<span class="tm-meas-sub">' + Math.round(mi.bearing) + "\u00b0 true  \u00b7  " +
+          D.fmtLatLon(mi.a.lat, mi.a.lon) + "  to  " + D.fmtLatLon(mi.b.lat, mi.b.lon) +
+          (mi.fixed ? "" : "  \u00b7  click to fix") + "</span>";
+      },
       onDragMode: function (mode) {
         $("tm-zoom-win").setAttribute("aria-pressed", mode === "zoomwin" ? "true" : "false");
+        $("tm-measure").setAttribute("aria-pressed", mode === "measure" ? "true" : "false");
+        $("tm-hint").hidden = mode === "measure";
       },
       onView: function () {
         /* legend zoom hints track visibility flips only */
         var wv = state.map ? state.map.wellsVisible() : false;
         var pv = state.map ? state.map.pipesVisible() : false;
-        if (wv !== state.wellsShown || pv !== state.pipesShown) {
+        var dv = (state.map && $("tm-contours").checked) ? state.map.depthsInView().join(",") : "";
+        if (wv !== state.wellsShown || pv !== state.pipesShown || dv !== state.depthsShown) {
           state.wellsShown = wv;
           state.pipesShown = pv;
+          state.depthsShown = dv;
           refreshLegend();
         }
         if (state.map && state.map.hdWanted()) ensureCoastHD();
       }
     });
     if (window.TM_PLACES) state.map.setPlaces(window.TM_PLACES);
+    window.TM_MAP = state.map;
     $("tm-zoom-in").addEventListener("click", function () { state.map.zoomStep(2.0); });
     $("tm-zoom-out").addEventListener("click", function () { state.map.zoomStep(1 / 2.0); });
+    $("tm-measure").addEventListener("click", function () {
+      var on = $("tm-measure").getAttribute("aria-pressed") !== "true";
+      if (on) state.map.setZoomWindowMode(false);   /* the two modes are exclusive */
+      state.map.setMeasureMode(on);
+    });
     $("tm-zoom-win").addEventListener("click", function () {
+      if ($("tm-measure").getAttribute("aria-pressed") === "true") state.map.setMeasureMode(false);
       state.map.setZoomWindowMode($("tm-zoom-win").getAttribute("aria-pressed") !== "true");
     });
     buildMonthChips();

@@ -424,11 +424,19 @@
   var WELL_MIN_SCALE = 8; /* px per degree below which well markers hide */
   var HD_COAST_SCALE = 16; /* px per degree past which coast tiles engage */
   var HD_PTS_BUDGET = 90000; /* max visible tile vertices before 50m wins */
-  var PIPE_MIN_SCALE = 4; /* px per degree below which pipelines hide */
-  var MAX_SCALE = 320;    /* px per degree: ~4 deg across a desktop view. The
-                             old cap of 80 stopped short of field scale (Ben,
-                             31 Aug 26); past ~320 the 0.5 deg cells and 1:10m
-                             coastline stop rewarding further zoom. */
+  /* Pipelines used to hide below scale 4, but the map OPENS at scale 3, so
+     they were invisible until you zoomed, which read as "the pipelines never
+     arrived". Measured at the default view with 29,269 lines: 5.4 ms with
+     them against 7.6 ms without, both inside one frame, so the threshold was
+     not earning its place. Kept low rather than removed so a deliberate zoom
+     right out does not draw a hairball. */
+  var PIPE_MIN_SCALE = 1.6; /* px per degree below which pipelines hide */
+  var MAX_SCALE = 2000;   /* px per degree: about 0.5 deg, or 50 km, across a
+                             desktop view. Raised from 320 (Ben, 1 Sep 26) now
+                             that the map carries real infrastructure: platform
+                             and pipeline positions are precise and reward the
+                             zoom even though the 0.5 deg wave cells and the
+                             1:10m coastline behind them do not. */
 
   TMMap.prototype.setBathy = function (levels, show) {
     if (levels && !this.bathyPaths) {
@@ -1104,7 +1112,6 @@
         if (self.opts.onHover) self.opts.onHover(self.pointToLatLon(e.offsetX, e.offsetY));
         return;
       }
-      if (self.dragMode === "measure") return;   /* never pan while measuring */
       var ids = Object.keys(self.pointers);
       if (ids.length === 1) {
         var dx = e.offsetX - p.x, dy = e.offsetY - p.y;

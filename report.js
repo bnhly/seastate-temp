@@ -22,7 +22,8 @@
     if (window.PDFLib) return Promise.resolve(window.PDFLib);
     return new Promise(function (resolve, reject) {
       var s = document.createElement("script");
-      s.src = src || "vendor/pdf-lib.min.js";
+      var u = src || "vendor/pdf-lib.min.js";
+      s.src = window.TM_BUILD ? u + (u.indexOf("?") < 0 ? "?" : "&") + "v=" + window.TM_BUILD : u;
       s.onload = function () { resolve(window.PDFLib); };
       s.onerror = function () { reject(new Error("Could not load the PDF library.")); };
       document.head.appendChild(s);
@@ -468,8 +469,12 @@
               p2.drawText(th, { x: hx + ti * cw + cw / 2 - fonts.bold.widthOfTextAtSize(th, 7) / 2,
                 y: y2, size: 7, font: fonts.bold, color: rgb(P, COL.ink2) });
             }
-            p2.drawText("significant wave height (m)", { x: M, y: y2 + 12, size: 6,
-              font: fonts.reg, color: rgb(P, COL.muted) });
+            /* The unit goes in the empty left cell of the header row, on the
+               same baseline as the threshold numbers it belongs to. It was
+               at y2 + 12, which is one point off the section heading's own
+               baseline, so the two printed on top of each other. */
+            p2.drawText("Hs (m)", { x: M, y: y2, size: 6.5,
+              font: fonts.bold, color: rgb(P, COL.muted) });
             y2 -= 5;
             p2.drawLine({ start: { x: M, y: y2 }, end: { x: PAGE_W - M, y: y2 }, thickness: 0.6, color: rgb(P, COL.baseline) });
             y2 -= 11;

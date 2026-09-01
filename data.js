@@ -53,6 +53,14 @@
 
   /* ---------- generic helpers ---------- */
 
+  /* Cache busting, mirroring app.js. Matters most when a dataset is
+     rebuilt: every wave tile changes at once, and a cached tile would show
+     the old numbers with no sign anything was stale. window.TM_BUILD is set
+     on the deployed page by tools/stamp_build.py and is absent locally. */
+  function vurl(u) {
+    return window.TM_BUILD ? u + (u.indexOf("?") < 0 ? "?" : "&") + "v=" + window.TM_BUILD : u;
+  }
+
   function haversineKm(lat1, lon1, lat2, lon2) {
     var R = 6371, d2r = Math.PI / 180;
     var dLat = (lat2 - lat1) * d2r, dLon = (lon2 - lon1) * d2r;
@@ -460,7 +468,7 @@
     this.meanhs = null;
     this.thresholds = THRESHOLDS;
     this.meta = null;
-    this.ready = fetch(base + "manifest.json", { cache: "no-cache" })
+    this.ready = fetch(vurl(base + "manifest.json"), { cache: "no-cache" })
       .then(function (r) {
         if (!r.ok) throw new Error("manifest " + r.status);
         return r.json();
@@ -493,7 +501,7 @@
       this.tiles[id] = Promise.resolve(null);
       return this.tiles[id];
     }
-    this.tiles[id] = fetch(this.base + id + ".json")
+    this.tiles[id] = fetch(vurl(this.base + id + ".json"))
       .then(function (r) { if (!r.ok) throw new Error("tile " + id + " " + r.status); return r.json(); })
       .catch(function () { return null; });
     return this.tiles[id];
@@ -687,7 +695,7 @@
   TileProvider.prototype.heatField = function (months) {
     var self = this;
     var load = this.meanhs ? Promise.resolve(this.meanhs)
-      : fetch(this.base + "meanhs.json").then(function (r) {
+      : fetch(vurl(this.base + "meanhs.json")).then(function (r) {
           if (!r.ok) throw new Error("meanhs " + r.status);
           return r.json();
         }).then(function (j) { self.meanhs = j; return j; });
@@ -794,7 +802,7 @@
   function depthManifest(base) {
     if (!base) return Promise.resolve(null);
     if (depthStore.manifestP === undefined) {
-      depthStore.manifestP = fetch(base + "depth/manifest.json").then(function (r) {
+      depthStore.manifestP = fetch(vurl(base + "depth/manifest.json")).then(function (r) {
         if (!r.ok) throw new Error("no depth manifest");
         return r.json();
       }).then(function (mf) {
@@ -815,7 +823,7 @@
       var tid = "d_" + latSW + "_" + lonSW;
       if (mf.tiles.indexOf(tid) < 0) return null;
       if (!depthStore.tiles[tid]) {
-        depthStore.tiles[tid] = fetch(base + "depth/" + tid + ".json").then(function (r) {
+        depthStore.tiles[tid] = fetch(vurl(base + "depth/" + tid + ".json")).then(function (r) {
           if (!r.ok) throw new Error("depth tile " + tid);
           return r.json();
         }).catch(function () { return null; });
@@ -839,7 +847,7 @@
   function curManifest(base) {
     if (!base) return Promise.resolve(null);
     if (curStore.manifestP === undefined) {
-      curStore.manifestP = fetch(base + "cur/manifest.json").then(function (r) {
+      curStore.manifestP = fetch(vurl(base + "cur/manifest.json")).then(function (r) {
         if (!r.ok) throw new Error("no currents manifest");
         return r.json();
       }).then(function (mf) {
@@ -866,7 +874,7 @@
       var list = Object.keys(ids).filter(function (id) { return mf.tiles.indexOf(id) >= 0; });
       list.forEach(function (id) {
         if (!curStore.tiles[id]) {
-          curStore.tiles[id] = fetch(base + "cur/" + id + ".json")
+          curStore.tiles[id] = fetch(vurl(base + "cur/" + id + ".json"))
             .then(function (r) { if (!r.ok) throw new Error("cur tile " + id); return r.json(); })
             .catch(function () { return null; });
         }
@@ -931,7 +939,7 @@
   function cycManifest(base) {
     if (!base) return Promise.resolve(null);
     if (cycStore.manifestP === undefined) {
-      cycStore.manifestP = fetch(base + "cyc/manifest.json").then(function (r) {
+      cycStore.manifestP = fetch(vurl(base + "cyc/manifest.json")).then(function (r) {
         if (!r.ok) throw new Error("no cyc manifest");
         return r.json();
       }).then(function (mf) {
@@ -959,7 +967,7 @@
       var list = Object.keys(ids).filter(function (id) { return mf.tiles.indexOf(id) >= 0; });
       list.forEach(function (id) {
         if (!cycStore.tiles[id]) {
-          cycStore.tiles[id] = fetch(base + "cyc/" + id + ".json")
+          cycStore.tiles[id] = fetch(vurl(base + "cyc/" + id + ".json"))
             .then(function (r) { if (!r.ok) throw new Error("cyc " + id); return r.json(); })
             .catch(function () { return null; });
         }

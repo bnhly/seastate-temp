@@ -431,6 +431,10 @@
      not earning its place. Kept low rather than removed so a deliberate zoom
      right out does not draw a hairball. */
   var PIPE_MIN_SCALE = 1.6; /* px per degree below which pipelines hide */
+  /* Past this, Natural Earth's four generalised levels give way to contours
+     computed from the 0.1 degree ETOPO tiles, which get finer with zoom
+     rather than coarser. */
+  var FINE_CONTOUR_SCALE = 24;
   var MAX_SCALE = 2000;   /* px per degree: about 0.5 deg, or 50 km, across a
                              desktop view. Raised from 320 (Ben, 1 Sep 26) now
                              that the map carries real infrastructure: platform
@@ -558,7 +562,15 @@
      Boxes still serve as a cheap reject before the vertex scan, and the scan
      stops at the first vertex inside, so the common case is fast. */
   TMMap.prototype.depthsInView = function () {
-    if (!this.bathyOn || !this.bathyPaths) return [];
+    if (!this.bathyOn) return [];
+    /* When the ETOPO contours are up they REPLACE the Natural Earth ones, so
+       the legend has to describe them instead. Reporting the coarse set here
+       is how the legend came to read "none in view" over a shelf that had
+       six contours drawn on it. */
+    if (this.fineContours && this.view.scale >= FINE_CONTOUR_SCALE) {
+      return this.fineContours.map(function (f) { return f.d; });
+    }
+    if (!this.bathyPaths) return [];
     var v = this.viewBounds(), out = [], i, k, j, bb, lv, ring, halfW, hit;
     halfW = this.cssW / this.view.scale / 2;
     for (i = 0; i < this.bathyPaths.length; i++) {
@@ -579,6 +591,18 @@
       if (hit) out.push(lv.d);
     }
     return out;
+  };
+
+  /* Finer contours, drawn from the ETOPO tiles, once zoomed in past the
+     point where the Natural Earth lines stop being useful. Set by app.js
+     as tiles arrive: [{d, segs:[[lat,lon,lat,lon],...]}]. */
+  TMMap.prototype.setFineContours = function (sets) {
+    this.fineContours = (sets && sets.length) ? sets : null;
+    this.render();
+  };
+
+  TMMap.prototype.fineContoursWanted = function () {
+    return this.bathyOn && this.view.scale >= FINE_CONTOUR_SCALE;
   };
 
   TMMap.prototype.setLinesVisible = function (on) {
@@ -707,9 +731,33 @@
       }
     }
 
+    /* Fine contours from ETOPO, when zoomed in far enough to have them.
+       They replace the Natural Earth lines rather than joining them, so the
+       same depth is never drawn twice from two sources. */
+    if (this.bathyOn && this.fineContours && view.scale >= FINE_CONTOUR_SCALE) {
+      var fc, fi, fs, fseg;
+      ctx.save();
+      ctx.lineWidth = 1;
+      for (fi = 0; fi < this.fineContours.length; fi++) {
+        fc = this.fineContours[fi];
+        /* over the blue Hs shading a faint line disappears, so these run
+           darker than the Natural Earth ones did, shallow strongest */
+        ctx.strokeStyle = "rgba(12, 42, 74, " + (fc.d <= 200 ? 0.75 : fc.d <= 1000 ? 0.62 : 0.5) + ")";
+        ctx.beginPath();
+        fs = fc.segs;
+        for (fseg = 0; fseg < fs.length; fseg++) {
+          ctx.moveTo(lonToX(fs[fseg][1]), latToY(fs[fseg][0]));
+          ctx.lineTo(lonToX(fs[fseg][3]), latToY(fs[fseg][2]));
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     /* depth contours (under land so coast-coincident segments stay hidden) */
     var bp;
-    if (this.bathyOn && this.bathyPaths) {
+    if (this.bathyOn && this.bathyPaths &&
+        !(this.fineContours && view.scale >= FINE_CONTOUR_SCALE)) {
       for (s = 0; s < shifts.length; s++) {
         shift = shifts[s];
         x0 = cssW / 2 + ((-180 + shift) - view.cLon) * view.scale;

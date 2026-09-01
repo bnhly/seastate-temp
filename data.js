@@ -838,6 +838,117 @@
     });
   }
 
+  /* ---------- contours from the ETOPO tiles ---------------------------
+     Natural Earth carries only 200 / 1000 / 2000 / 3000 m and is a
+     generalised world dataset, so zooming in gave FEWER contours, not more:
+     in deep water only the 3000 m line was anywhere near. The depth tiles
+     already fetched for depth-at-point are 0.1 degree, so contours drawn
+     from them get finer as you zoom instead of coarser, and can carry
+     shelf-scale levels that Natural Earth simply does not have.
+
+     Marching squares, one cell at a time, emitting short segments rather
+     than chasing them into rings. Segments are all the renderer needs, and
+     joining them would cost more than it buys at this size. */
+
+  var contourStore = {};   /* tileId + "|" + level -> [[lat,lon,lat,lon], ...] */
+
+  function interpEdge(v0, v1, a0, a1, level) {
+    var t = (level - v0) / (v1 - v0);
+    return a0 + (a1 - a0) * t;
+  }
+
+  /* Depth is positive down; the tile stores elevation, negative at sea. */
+  function contourTile(tile, level) {
+    var segs = [], r, c, nlon = tile.nlon, nlat = tile.nlat, e = tile.elev;
+    var res = tile.res, lat0 = tile.lat0, lon0 = tile.lon0;
+    var target = -level;
+    for (r = 0; r < nlat - 1; r++) {
+      for (c = 0; c < nlon - 1; c++) {
+        /* corners: sw, se, nw, ne */
+        var sw = e[r * nlon + c], se = e[r * nlon + c + 1];
+        var nw = e[(r + 1) * nlon + c], ne = e[(r + 1) * nlon + c + 1];
+        if (sw === null || se === null || nw === null || ne === null) continue;
+        var idx = (sw < target ? 1 : 0) | (se < target ? 2 : 0) |
+                  (ne < target ? 4 : 0) | (nw < target ? 8 : 0);
+        if (idx === 0 || idx === 15) continue;
+        var latS = lat0 + r * res, latN = latS + res;
+        var lonW = lon0 + c * res, lonE = lonW + res;
+        /* crossing point on each edge, when that edge is crossed */
+        var bot = null, top = null, lft = null, rgt = null;
+        if ((sw < target) !== (se < target)) bot = { lat: latS, lon: interpEdge(sw, se, lonW, lonE, target) };
+        if ((nw < target) !== (ne < target)) top = { lat: latN, lon: interpEdge(nw, ne, lonW, lonE, target) };
+        if ((sw < target) !== (nw < target)) lft = { lon: lonW, lat: interpEdge(sw, nw, latS, latN, target) };
+        if ((se < target) !== (ne < target)) rgt = { lon: lonE, lat: interpEdge(se, ne, latS, latN, target) };
+        var ends = [];
+        if (bot) ends.push(bot);
+        if (top) ends.push(top);
+        if (lft) ends.push(lft);
+        if (rgt) ends.push(rgt);
+        /* Cases 5 and 10 are saddles: two separate crossings through one
+           cell. Joining the wrong pair draws an X, so pair by edge. */
+        if (ends.length === 2) {
+          segs.push([ends[0].lat, ends[0].lon, ends[1].lat, ends[1].lon]);
+        } else if (ends.length === 4) {
+          segs.push([lft.lat, lft.lon, bot.lat, bot.lon]);
+          segs.push([rgt.lat, rgt.lon, top.lat, top.lon]);
+        }
+      }
+    }
+    return segs;
+  }
+
+  /* Contour segments for one already-loaded tile, cached per level. */
+  function tileContours(tile, tid, level) {
+    var key = tid + "|" + level;
+    if (!contourStore[key]) contourStore[key] = contourTile(tile, level);
+    return contourStore[key];
+  }
+
+  /* Which tiles cover a lat/lon box, as ids the manifest knows. */
+  function depthTileIds(mf, lat0, lat1, lon0, lon1) {
+    var t = mf.tile_deg, out = [], la, lo;
+    for (la = Math.floor(lat0 / t) * t; la <= lat1; la += t) {
+      for (lo = Math.floor(lon0 / t) * t; lo <= lon1; lo += t) {
+        var tid = "d_" + la + "_" + wrapLon(lo);
+        if (mf.tiles.indexOf(tid) >= 0 && out.indexOf(tid) < 0) out.push(tid);
+      }
+    }
+    return out;
+  }
+
+  /* Contours for a view box at the given levels. Resolves with
+     [{d, segs: [[lat,lon,lat,lon], ...]}], skipping levels with nothing in
+     range. Tiles already in the store are used immediately; missing ones are
+     fetched and the caller re-renders when they land. */
+  function contoursForBox(base, lat0, lat1, lon0, lon1, levels) {
+    return depthManifest(base).then(function (mf) {
+      if (!mf) return null;
+      var ids = depthTileIds(mf, lat0, lat1, lon0, lon1);
+      if (!ids.length || ids.length > 12) return null;   /* too wide to be useful */
+      var gets = ids.map(function (tid) {
+        if (!depthStore.tiles[tid]) {
+          depthStore.tiles[tid] = fetch(vurl(base + "depth/" + tid + ".json")).then(function (r) {
+            if (!r.ok) throw new Error("depth tile " + tid);
+            return r.json();
+          }).catch(function () { return null; });
+        }
+        return depthStore.tiles[tid].then(function (t) { return { tid: tid, tile: t }; });
+      });
+      return Promise.all(gets).then(function (loaded) {
+        var out = [], li, k;
+        for (li = 0; li < levels.length; li++) {
+          var segs = [];
+          for (k = 0; k < loaded.length; k++) {
+            if (!loaded[k].tile) continue;
+            segs = segs.concat(tileContours(loaded[k].tile, loaded[k].tid, levels[li]));
+          }
+          if (segs.length) out.push({ d: levels[li], segs: segs });
+        }
+        return out;
+      });
+    });
+  }
+
   /* ---------- currents + tidal stream tiles (web/data/cur/, written by
      tools/build_currents_cmems.py). Optional dataset: everything returns null
      until it is deployed. All speeds SI (m/s) on this side of the reader. */
@@ -1764,6 +1875,7 @@
     depthBandAt: depthBandAt,
     depthManifest: depthManifest,
     depthExactAt: depthExactAt,
+    contoursForBox: contoursForBox,
     nearestAsset: nearestAsset,
     decodeAssetLines: decodeAssetLines
   };

@@ -605,6 +605,27 @@
     return this.bathyOn && this.view.scale >= FINE_CONTOUR_SCALE;
   };
 
+  /* Nearest contour segment under the cursor, or null. The segments are
+     already in screen-independent lat/lon, so this mirrors hitLine but walks
+     flat [lat,lon,lat,lon] quads instead of point lists. */
+  TMMap.prototype.hitContour = function (mx, my) {
+    if (!this.fineContours || !this.fineContoursWanted()) return null;
+    var best = HIT_PX * HIT_PX, hit = null, at = null, i, k, segs, r;
+    for (i = 0; i < this.fineContours.length; i++) {
+      segs = this.fineContours[i].segs;
+      for (k = 0; k < segs.length; k++) {
+        var x1 = this.lonToX(segs[k][1]), y1 = this.latToY(segs[k][0]);
+        var x2 = this.lonToX(segs[k][3]), y2 = this.latToY(segs[k][2]);
+        /* cheap screen-space reject before the distance maths */
+        if (Math.min(x1, x2) - HIT_PX > mx || Math.max(x1, x2) + HIT_PX < mx) continue;
+        if (Math.min(y1, y2) - HIT_PX > my || Math.max(y1, y2) + HIT_PX < my) continue;
+        r = segDist2(mx, my, x1, y1, x2, y2);
+        if (r.d2 < best) { best = r.d2; hit = this.fineContours[i]; at = { x: r.x, y: r.y }; }
+      }
+    }
+    return hit ? { d: hit.d, at: at } : null;
+  };
+
   TMMap.prototype.setLinesVisible = function (on) {
     this.linesOn = !!on;
     this.render();
@@ -953,6 +974,22 @@
         drawTip(ctx, cssW, this.hoverLineAt.x, this.hoverLineAt.y, lt[0], lt[1], lt[2]);
       }
 
+      /* Depth contour under the cursor. Lowest priority of the line layers:
+         a pipeline or a track passing over a contour is the more specific
+         thing to name. */
+      if (withChrome && this.hoverDepth) {
+        var hd = this.hoverDepth;
+        ctx.beginPath();
+        ctx.arc(hd.at.x, hd.at.y, 4, 0, 2 * Math.PI);
+        ctx.fillStyle = "#0c2a4a";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(252,252,251,0.95)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        drawTip(ctx, cssW, hd.at.x, hd.at.y,
+          hd.d.toLocaleString() + " m", "Depth contour (ETOPO 2022)", "");
+      }
+
       /* Cyclone track under the cursor. */
       if (withChrome && this.hoverTrack) {
         var ht = this.hoverTrack, tp = ht.pts, tk;
@@ -1274,7 +1311,7 @@
       /* Lines are tested only when no asset point is under the cursor: a
          point is a more precise target than a line passing near it, and a
          well sitting on its own pipeline should still identify as the well. */
-      var nLine = null, nLineAt = null, nTrack = null, nTrackAt = null;
+      var nLine = null, nLineAt = null, nTrack = null, nTrackAt = null, nDepth = null;
       if (!next) {
         var pipesUp = self.assetsOn && self.linesOn !== false && self.assetLinesBox && self.pipesVisible();
         if (pipesUp) {
@@ -1285,23 +1322,28 @@
           var hitT = self.hitLine(self.cycShownBox, e.offsetX, e.offsetY);
           if (hitT) { nTrack = hitT.ln; nTrackAt = hitT.at; }
         }
+        if (!nLine && !nTrack) nDepth = self.hitContour(e.offsetX, e.offsetY);
       }
-      if (next !== self.hoverAsset || nLine !== self.hoverLine || nTrack !== self.hoverTrack) {
+      var dChanged = (nDepth && nDepth.d) !== (self.hoverDepth && self.hoverDepth.d);
+      if (next !== self.hoverAsset || nLine !== self.hoverLine ||
+          nTrack !== self.hoverTrack || dChanged) {
         self.hoverAsset = next;
         self.hoverLine = nLine;
         self.hoverLineAt = nLineAt;
         self.hoverTrack = nTrack;
         self.hoverTrackAt = nTrackAt;
-        el.style.cursor = (nLine || nTrack) ? "pointer" : "";
+        self.hoverDepth = nDepth;
+        el.style.cursor = (nLine || nTrack || nDepth) ? "pointer" : "";
         self.render();
       }
     });
     el.addEventListener("mouseleave", function () {
       if (self.opts.onHover) self.opts.onHover(null);
-      if (self.hoverAsset || self.hoverLine || self.hoverTrack) {
+      if (self.hoverAsset || self.hoverLine || self.hoverTrack || self.hoverDepth) {
         self.hoverAsset = null;
         self.hoverLine = null;
         self.hoverTrack = null;
+        self.hoverDepth = null;
         self.render();
       }
     });

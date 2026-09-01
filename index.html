@@ -58,7 +58,14 @@
 
   <header class="tm-header">
     <div class="tm-brand">
-      <span class="tm-brand-name">THRUST MARITIME</span>
+      <a class="tm-brand-mark" href="https://www.thrustm.com" target="_blank" rel="noopener"
+         aria-label="Thrust Maritime">
+        <!-- The mark is optional. If the file is not deployed the onerror swaps in the
+             text wordmark, so the header never renders as a broken image. -->
+        <img src="assets/thrust-maritime-logo.png" alt="Thrust Maritime"
+             onerror="this.closest('.tm-brand-mark').hidden=true;document.getElementById('tm-brand-name').hidden=false;">
+      </a>
+      <span class="tm-brand-name" id="tm-brand-name" hidden>THRUST MARITIME</span>
       <span class="tm-brand-sep"></span>
       <h1 class="tm-brand-tool">Sea State Explorer</h1>
     </div>

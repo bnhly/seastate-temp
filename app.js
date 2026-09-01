@@ -7,6 +7,7 @@
   var DEFAULTS = {
     companyName: "Thrust Maritime",
     website: "https://www.thrustm.com",
+    logoSrc: "assets/thrust-maritime-logo.png",
     dataBase: "data/",
     pdfLibSrc: "vendor/pdf-lib.min.js",
     bathySrc: "bathy.js",

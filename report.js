@@ -142,14 +142,28 @@
     return state.months.map(function (m) { return state.monthNames[m]; }).join(", ");
   }
 
+  function loadLogo(doc, src) {
+    /* Optional: a missing or unreadable file leaves the header on the text
+       wordmark it used before, rather than failing the whole PDF. */
+    if (!src) return Promise.resolve(null);
+    return fetch(src).then(function (r) {
+      if (!r.ok) throw new Error("logo HTTP " + r.status);
+      return r.arrayBuffer();
+    }).then(function (buf) {
+      return doc.embedPng(buf);
+    }).catch(function () { return null; });
+  }
+
   function generate(state) {
     return ensurePdfLib(state.cfg.pdfLibSrc).then(function (P) {
       return P.PDFDocument.create().then(function (doc) {
         return Promise.all([
           doc.embedFont(P.StandardFonts.Helvetica),
-          doc.embedFont(P.StandardFonts.HelveticaBold)
+          doc.embedFont(P.StandardFonts.HelveticaBold),
+          loadLogo(doc, state.cfg.logoSrc)
         ]).then(function (fs) {
           var fonts = { reg: fs[0], bold: fs[1] };
+          var logo = fs[2];
           var page = doc.addPage([PAGE_W, PAGE_H]);
           var y;
 
@@ -162,7 +176,15 @@
           }
 
           /* header */
-          page.drawText(state.cfg.companyName.toUpperCase(), { x: M, y: PAGE_H - M - 12, size: 15, font: fonts.bold, color: rgb(P, COL.navy) });
+          if (logo) {
+            var lgH = 22;
+            page.drawImage(logo, {
+              x: M, y: PAGE_H - M - 26,
+              width: logo.width * (lgH / logo.height), height: lgH
+            });
+          } else {
+            page.drawText(state.cfg.companyName.toUpperCase(), { x: M, y: PAGE_H - M - 12, size: 15, font: fonts.bold, color: rgb(P, COL.navy) });
+          }
           var t1 = "Sea State Exceedance Summary";
           page.drawText(t1, { x: PAGE_W - M - fonts.bold.widthOfTextAtSize(t1, 11), y: PAGE_H - M - 8, size: 11, font: fonts.bold, color: rgb(P, COL.ink) });
           var dt = new Date();

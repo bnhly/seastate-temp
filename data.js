@@ -949,6 +949,80 @@
     });
   }
 
+  /* ---------- Hs x Tp joint tables (web/data/joint/, emit_joint_tiles.py)
+     Its own OPTIONAL tile set, deliberately not a field of the wave tiles:
+     the WAVERYS checkpoint dropped the joint table, so anything living
+     inside the wave tiles would die with the backbone swap. 1.0 degree
+     blocks of the 0.5 degree ERA5 grid; jt[cell][month] is a list of Hs
+     rows, each a trailing-trimmed list of Tp-bin counts. */
+
+  var jointStore = { manifestP: undefined, tiles: {} };
+
+  function jointManifest(base) {
+    if (!base) return Promise.resolve(null);
+    if (jointStore.manifestP === undefined) {
+      jointStore.manifestP = fetch(vurl(base + "joint/manifest.json")).then(function (r) {
+        if (!r.ok) throw new Error("no joint manifest");
+        return r.json();
+      }).then(function (mf) {
+        return (mf && mf.format === 1) ? mf : null;
+      }).catch(function () { return null; });
+    }
+    return jointStore.manifestP;
+  }
+
+  /* The 12 monthly row-tables for the 1 deg block containing (lat, lon),
+     with the bin metadata, or null. */
+  function jointAt(base, lat, lon) {
+    return jointManifest(base).then(function (mf) {
+      if (!mf) return null;
+      var t = mf.tile_deg;
+      var lonW = wrapLon(lon);
+      var tid = "j_" + (Math.floor(lat / t) * t) + "_" + (Math.floor(lonW / t) * t);
+      if (mf.tiles.indexOf(tid) < 0) return null;
+      if (!jointStore.tiles[tid]) {
+        jointStore.tiles[tid] = fetch(vurl(base + "joint/" + tid + ".json")).then(function (r) {
+          if (!r.ok) throw new Error("joint tile " + tid);
+          return r.json();
+        }).catch(function () { return null; });
+      }
+      return jointStore.tiles[tid].then(function (tile) {
+        if (!tile) return null;
+        var best = -1, bd = 0.75 * 0.75, i, d;
+        for (i = 0; i < tile.lat.length; i++) {
+          d = (tile.lat[i] - lat) * (tile.lat[i] - lat) +
+              (tile.lon[i] - lonW) * (tile.lon[i] - lonW);
+          if (d < bd) { bd = d; best = i; }
+        }
+        if (best < 0) return null;
+        return { hs: mf.hs, tp: mf.tp, sourceLabel: mf.source_label,
+                 period: mf.period, note: mf.note || "",
+                 months: tile.jt[best] };
+      });
+    });
+  }
+
+  /* Sum the selected months into one dense hs x tp count grid. */
+  function jointAggregate(months, sel, hsNb, tpNb) {
+    var grid = [], r, c, m, rows, row;
+    for (r = 0; r < hsNb; r++) {
+      grid.push([]);
+      for (c = 0; c < tpNb; c++) grid[r].push(0);
+    }
+    var total = 0;
+    for (m = 0; m < sel.length; m++) {
+      rows = months[sel[m]] || [];
+      for (r = 0; r < rows.length; r++) {
+        row = rows[r];
+        for (c = 0; c < row.length; c++) {
+          grid[r][c] += row[c];
+          total += row[c];
+        }
+      }
+    }
+    return { grid: grid, total: total };
+  }
+
   /* ---------- currents + tidal stream tiles (web/data/cur/, written by
      tools/build_currents_cmems.py). Optional dataset: everything returns null
      until it is deployed. All speeds SI (m/s) on this side of the reader. */
@@ -1876,6 +1950,8 @@
     depthManifest: depthManifest,
     depthExactAt: depthExactAt,
     contoursForBox: contoursForBox,
+    jointAt: jointAt,
+    jointAggregate: jointAggregate,
     nearestAsset: nearestAsset,
     decodeAssetLines: decodeAssetLines
   };

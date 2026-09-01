@@ -358,6 +358,75 @@
       });
   }
 
+  /* Hs x Tp scatter ------------------------------------------------------
+     The joint table for the cell arrives once per cell (its own optional
+     tile set); month changes re-aggregate from the cached months without a
+     refetch. Values are parts per thousand, the convention scatter tables
+     are read in; counts stay behind them for the sample-size line. */
+  function renderScatter() {
+    var row = $("tm-rowj");
+    var jd = state.jointFetch && state.jointFetch.key === state.jointKey ? state.jointFetch.val : null;
+    var sel = monthIdxList();
+    state.pdfScatter = null;
+    if (!jd || !sel.length) { row.hidden = true; return; }
+    var agg = D.jointAggregate(jd.months, sel, jd.hs.nb, jd.tp.nb);
+    if (!agg.total) { row.hidden = true; return; }
+    row.hidden = false;
+    $("tm-scatter-title").textContent = "Wave height against peak period " + monthsLabel();
+
+    var hsNb = jd.hs.nb, tpNb = jd.tp.nb, r, c;
+    var pml = [], vmax = 0, top = 0;
+    for (r = 0; r < hsNb; r++) {
+      pml.push([]);
+      for (c = 0; c < tpNb; c++) {
+        var v = 1000 * agg.grid[r][c] / agg.total;
+        pml[r].push(v);
+        if (v > vmax) vmax = v;
+        if (agg.grid[r][c] > 0 && r > top) top = r;
+      }
+    }
+
+    var html = '<table class="tm-scatter"><thead><tr><th>H<sub>s</sub> \\ T<sub>p</sub></th>';
+    for (c = 0; c < tpNb; c++) {
+      html += "<th>" + (c === tpNb - 1 ? (jd.tp.t0 + c) + "+" : (jd.tp.t0 + c) + "\u2013" + (jd.tp.t0 + c + 1)) + " s</th>";
+    }
+    html += "<th class=\"tm-sc-tot\">all</th></tr></thead><tbody>";
+    for (r = top; r >= 0; r--) {
+      var lab = r === hsNb - 1
+        ? (jd.hs.h0 + r * jd.hs.step).toFixed(1) + "+"
+        : (jd.hs.h0 + r * jd.hs.step).toFixed(1) + "\u2013" + (jd.hs.h0 + (r + 1) * jd.hs.step).toFixed(1);
+      html += "<tr><th>" + lab + " m</th>";
+      var rowSum = 0;
+      for (c = 0; c < tpNb; c++) {
+        var vv = pml[r][c];
+        rowSum += vv;
+        if (agg.grid[r][c] === 0) {
+          html += '<td class="tm-sc-zero">\u00b7</td>';
+        } else {
+          var shade = Math.pow(vv / vmax, 0.5) * 0.55;
+          var txt = vv >= 1 ? String(Math.round(vv)) : "&lt;1";
+          html += '<td class="tm-sc-heat" style="background:rgba(57,135,229,' +
+            shade.toFixed(3) + ')">' + txt + "</td>";
+        }
+      }
+      html += '<td class="tm-sc-tot">' + (rowSum >= 1 ? Math.round(rowSum) : "&lt;1") + "</td></tr>";
+    }
+    html += '<tr><th class="tm-sc-tot">all</th>';
+    for (c = 0; c < tpNb; c++) {
+      var cs = 0;
+      for (r = 0; r < hsNb; r++) cs += pml[r][c];
+      html += '<td class="tm-sc-tot">' + (cs >= 1 ? Math.round(cs) : (cs > 0 ? "&lt;1" : "\u00b7")) + "</td>";
+    }
+    html += '<td class="tm-sc-tot">1000</td></tr></tbody></table>';
+    $("tm-scatter").innerHTML = html;
+    $("tm-scatter-note").textContent =
+      "Parts per thousand of the time each wave height and peak period pair occurs, from " +
+      agg.total.toLocaleString() + " samples. " + jd.sourceLabel + ", " + jd.period +
+      ", aggregated over a 1.0\u00b0 cell around the data point.";
+    state.pdfScatter = { grid: agg.grid, total: agg.total, hs: jd.hs, tp: jd.tp,
+                         top: top, sourceLabel: jd.sourceLabel, period: jd.period };
+  }
+
   function updateAttribution() {
     $("tm-attribution").textContent = allSources();
   }
@@ -787,6 +856,18 @@
        comes embedded in demo results, or from the optional cur/ tile set
        (fetched once per cell, re-render when it lands). */
     var curVal = null;
+    /* joint Hs x Tp: one fetch per cell, re-render on arrival */
+    state.jointKey = cellKey;
+    if (!(state.jointFetch && state.jointFetch.key === cellKey) && cfg.dataBase !== null) {
+      state.jointFetch = { key: cellKey, val: null };
+      D.jointAt(cfg.dataBase, res.cell.lat, res.cell.lon).then(function (v) {
+        if (state.jointFetch && state.jointFetch.key !== cellKey) return;
+        state.jointFetch = { key: cellKey, val: v };
+        renderScatter();
+      });
+    }
+    renderScatter();
+
     if (res.cur) {
       curVal = res.cur;
     } else if (state.curFetch && state.curFetch.key === cellKey) {
@@ -1392,6 +1473,7 @@
       diurnal: state.pdfDiurnal || null,
       monthExc: res.exc,
       monthN: res.n,
+      scatter: state.pdfScatter || null,
       allSources: allSources(),
       shareUrl: shareUrl(),
       assetsShown: !!(state.assetsData && $("tm-assets").checked),

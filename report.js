@@ -240,6 +240,80 @@
       font: fonts.reg, color: rgb(P, COL.muted) });
   }
 
+  /* The Hs x Tp scatter, drawn as the table it is. Values in parts per
+     thousand, zeros as dots, heat behind occupied cells. Returns the y it
+     finished at. */
+  function drawScatterPdf(P, page, fonts, x0, yTop, w, sc) {
+    var hsNb = sc.hs.nb, tpNb = sc.tp.nb, r, c;
+    var pml = [], vmax = 0;
+    for (r = 0; r < hsNb; r++) {
+      pml.push([]);
+      for (c = 0; c < tpNb; c++) {
+        var v = 1000 * sc.grid[r][c] / sc.total;
+        pml[r].push(v);
+        if (v > vmax) vmax = v;
+      }
+    }
+    var labW = 46, totW = 24, colW = (w - labW - totW) / tpNb;
+    var rowH = 10.6, y = yTop;
+
+    function cellTxt(v, count) {
+      if (count === 0) return "\u00b7";
+      return v >= 1 ? String(Math.round(v)) : "<1";
+    }
+    function put(txt, cx, cw, bold, col) {
+      var f = bold ? fonts.bold : fonts.reg;
+      page.drawText(txt, { x: cx + cw - 3 - f.widthOfTextAtSize(txt, 6.3),
+        y: y - 8, size: 6.3, font: f, color: rgb(P, col) });
+    }
+
+    /* header row */
+    put("Hs \\ Tp", x0, labW, true, COL.ink2);
+    for (c = 0; c < tpNb; c++) {
+      put(c === tpNb - 1 ? (sc.tp.t0 + c) + "+" : String(sc.tp.t0 + c), x0 + labW + c * colW, colW, true, COL.ink2);
+    }
+    put("all", x0 + labW + tpNb * colW, totW, true, COL.ink2);
+    y -= rowH;
+    page.drawLine({ start: { x: x0, y: y - 1 }, end: { x: x0 + w, y: y - 1 },
+      thickness: 0.5, color: rgb(P, COL.baseline) });
+
+    for (r = sc.top; r >= 0; r--) {
+      var rowSum = 0;
+      for (c = 0; c < tpNb; c++) {
+        var vv = pml[r][c];
+        rowSum += vv;
+        if (sc.grid[r][c] > 0) {
+          page.drawRectangle({ x: x0 + labW + c * colW, y: y - rowH + 1.5,
+            width: colW, height: rowH - 0.5,
+            color: rgb(P, [0.22, 0.53, 0.9]),
+            opacity: Math.min(0.5, Math.pow(vv / vmax, 0.5) * 0.5) });
+        }
+        put(cellTxt(vv, sc.grid[r][c]), x0 + labW + c * colW, colW, false,
+            sc.grid[r][c] ? COL.ink : COL.dim);
+      }
+      var lab = r === hsNb - 1
+        ? (sc.hs.h0 + r * sc.hs.step).toFixed(1) + "+"
+        : (sc.hs.h0 + r * sc.hs.step).toFixed(1) + "-" + (sc.hs.h0 + (r + 1) * sc.hs.step).toFixed(1);
+      put(lab, x0, labW, true, COL.ink2);
+      put(rowSum >= 1 ? String(Math.round(rowSum)) : "<1", x0 + labW + tpNb * colW, totW, true, COL.ink2);
+      y -= rowH;
+    }
+    page.drawLine({ start: { x: x0, y: y - 1 }, end: { x: x0 + w, y: y - 1 },
+      thickness: 0.5, color: rgb(P, COL.baseline) });
+    put("all", x0, labW, true, COL.ink2);
+    for (c = 0; c < tpNb; c++) {
+      var cs = 0;
+      for (r = 0; r < hsNb; r++) cs += pml[r][c];
+      put(cs >= 1 ? String(Math.round(cs)) : (cs > 0 ? "<1" : "\u00b7"),
+          x0 + labW + c * colW, colW, true, COL.ink2);
+    }
+    put("1000", x0 + labW + tpNb * colW, totW, true, COL.ink2);
+    y -= rowH;
+    page.drawText("wave height (m) down, peak period (s) across, parts per thousand of the time",
+      { x: x0, y: y - 7, size: 6, font: fonts.reg, color: rgb(P, COL.muted) });
+    return y - 14;
+  }
+
   /* Peak-period distribution: one bar per band. */
   function drawHistPdf(P, page, fonts, x0, y0, w, h, spec) {
     var v = spec.values, i, maxv = 0;
@@ -559,24 +633,33 @@
                 M, y3, 7, PAGE_W - 2 * M, 9, rgb(P, COL.muted)) - 16;
             }
 
+            if (state.scatter && y3 > 300) {
+              y3 = sectionHead(P, p3, fonts, M, y3, "Wave height against peak period" +
+                (state.scatter.period ? "  (" + state.scatter.sourceLabel + ", " + state.scatter.period + ")" : ""));
+              y3 = drawScatterPdf(P, p3, fonts, M, y3, PAGE_W - 2 * M, state.scatter);
+            }
+
+            /* ---------- page 4: cyclones, tide, notes ---------- */
+            var p4 = addPage(doc, P, fonts, logo, "Exposure and notes", hdrSub);
+            var y4 = PAGE_H - M - 44;
+
+            /* the site facts moved here from page 3 when the scatter took
+               that space; page 4 had the headroom */
             var facts = [];
             if (state.windLabel) facts.push(["Wind", state.windLabel]);
             if (state.extremesLabel) facts.push(["Extreme sea states", state.extremesLabel]);
             if (state.prevailingLabel) facts.push(["Prevailing conditions", state.prevailingLabel]);
             if (state.daylightLabel) facts.push(["Daylight", state.daylightLabel]);
             if (facts.length) {
-              y3 = sectionHead(P, p3, fonts, M, y3, "In numbers");
+              y4 = sectionHead(P, p4, fonts, M, y4, "In numbers");
               var fi;
-              for (fi = 0; fi < facts.length && y3 > 70; fi++) {
-                p3.drawText(facts[fi][0].toUpperCase(), { x: M, y: y3, size: 6.5,
+              for (fi = 0; fi < facts.length && y4 > 200; fi++) {
+                p4.drawText(facts[fi][0].toUpperCase(), { x: M, y: y4, size: 6.5,
                   font: fonts.bold, color: rgb(P, COL.muted) });
-                y3 = drawWrapped(p3, fonts.reg, facts[fi][1], M, y3 - 10, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 8;
+                y4 = drawWrapped(p4, fonts.reg, facts[fi][1], M, y4 - 10, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 8;
               }
+              y4 -= 8;
             }
-
-            /* ---------- page 4: cyclones, tide, notes ---------- */
-            var p4 = addPage(doc, P, fonts, logo, "Exposure and notes", hdrSub);
-            var y4 = PAGE_H - M - 44;
 
             if (state.cyc) {
               y4 = sectionHead(P, p4, fonts, M, y4, "Tropical cyclone exposure within " +

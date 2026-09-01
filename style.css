@@ -562,3 +562,22 @@ html, body {
 }
 .tm-map-measure b { font-weight: 700; }
 .tm-map-measure .tm-meas-sub { color: var(--ink-2, #52514e); font-size: 11.5px; display: block; }
+
+/* Hs x Tp scatter ---------------------------------------------------------
+   A wide table, so it takes a full grid row and scrolls inside its own
+   container on narrow screens (the page body must never scroll sideways). */
+.tm-fig-full { grid-column: 1 / -1; }
+.tm-scatter-wrap { overflow-x: auto; }
+.tm-scatter { border-collapse: separate; border-spacing: 0; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; color: var(--ink, #1b2631); }
+.tm-scatter th, .tm-scatter td {
+  padding: 2px 6px; text-align: right; white-space: nowrap;
+  border-right: 1px solid var(--border, #e3e8eb);
+  border-bottom: 1px solid var(--border, #e3e8eb);
+}
+.tm-scatter th { color: var(--ink-2, #52514e); font-weight: 600; background: var(--surface, #fcfcfb); }
+.tm-scatter .tm-sc-zero { color: var(--baseline, #c3c2b7); }
+.tm-scatter .tm-sc-tot { font-weight: 600; background: var(--surface, #fcfcfb); }
+/* heat cells carry literal dark text on their literal pale backgrounds, so
+   they read the same in both themes (house dark-theme rule) */
+.tm-scatter td.tm-sc-heat { color: #14304a; }

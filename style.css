@@ -487,3 +487,20 @@ html, body {
   .tm-map-wrap { height: 340px; }
   .tm-headline .tm-big { font-size: 38px; }
 }
+
+/* cyclone track filters: same visual family as the asset filter strip */
+.tm-track-ctl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin-top: 8px; padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px; color: var(--ink-2);
+}
+.tm-track-ctl label { display: inline-flex; align-items: center; gap: 5px; }
+.tm-track-ctl input[type="number"] {
+  width: 62px; padding: 2px 5px;
+  border: 1px solid var(--baseline); border-radius: 5px;
+  background: var(--surface); color: var(--ink); font: inherit;
+}
+.tm-track-ctl #tm-ct-count { margin-left: auto; color: var(--muted); }

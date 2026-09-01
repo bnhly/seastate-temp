@@ -368,17 +368,34 @@
      forty years of tracks read as a density map with the majors standing
      out. tracks: [{w (max kt), pts: [[lat, lon], ...]}] */
   TMMap.prototype.setCycTracks = function (tracks) {
-    var minor = new Path2D(), major = new Path2D(), i, k, pts, p;
-    for (i = 0; i < (tracks || []).length; i++) {
+    this.cycTracksAll = tracks || [];
+    this.buildCycPaths();
+  };
+
+  /* Forty-odd years of tracks drawn at once is a smear (4,170 of them on the
+     real IBTrACS set), so the drawn set is filtered by the caller: keep(track)
+     returns true for the ones to show. Returns how many were kept. */
+  TMMap.prototype.setCycTrackFilter = function (keep) {
+    this.cycKeep = keep || null;
+    return this.buildCycPaths();
+  };
+
+  TMMap.prototype.buildCycPaths = function () {
+    var tracks = this.cycTracksAll || [];
+    var minor = new Path2D(), major = new Path2D(), i, k, pts, p, kept = 0;
+    for (i = 0; i < tracks.length; i++) {
+      if (this.cycKeep && !this.cycKeep(tracks[i])) continue;
       pts = tracks[i].pts;
       if (!pts || pts.length < 2) continue;
+      kept += 1;
       p = tracks[i].w >= 96 ? major : minor;
       p.moveTo(pts[0][1], mercY(pts[0][0]));
       for (k = 1; k < pts.length; k++) p.lineTo(pts[k][1], mercY(pts[k][0]));
     }
-    this.cycMinorPath = (tracks && tracks.length) ? minor : null;
-    this.cycMajorPath = (tracks && tracks.length) ? major : null;
+    this.cycMinorPath = kept ? minor : null;
+    this.cycMajorPath = kept ? major : null;
     this.render();
+    return kept;
   };
 
   TMMap.prototype.setCycTracksVisible = function (on) {

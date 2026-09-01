@@ -1094,8 +1094,29 @@
       bits.push("strongest on record inside this ring: " + s.category +
         " (" + Math.round(s.wmax) + " kt)");
     }
-    state.lastCyc = "Tropical cyclones " + monthsLabel() + ": " + bits.join("; ") + ".";
+    /* Outside the tropics IBTrACS is still tracking the SAME named storms,
+       but by then they have gone post-tropical: the North Sea's 1.2 per
+       season are recurving Atlantic hurricanes (Ophelia 2017, Katia 2011,
+       Lorenzo 2019...). Calling those "tropical cyclones", and repeating
+       the demob advice, would be wrong twice over - they arrive as ordinary
+       deep lows whose seas are already inside the wave statistics above. */
+    var cellLat = (state.cellData && state.cellData.cell) ? state.cellData.cell.lat : 0;
+    var exLat = Math.abs(cellLat) > 35;
+    state.lastCyc = (exLat ? "Tropical and ex-tropical cyclones "
+                           : "Tropical cyclones ") + monthsLabel() + ": " +
+      bits.join("; ") + ".";
     $("tm-cyc-sum").textContent = state.lastCyc;
+    $("tm-cyc-note").textContent = exLat
+      ? ("Named storms at tropical-storm strength or more, from best tracks "
+         + "since 1980, counted for their whole life. At this latitude most "
+         + "are POST-TROPICAL by the time they arrive: recurving hurricanes "
+         + "that reach here as deep lows, whose seas are already counted in "
+         + "the wave statistics above. Read this as how often the remains of "
+         + "a named storm pass nearby, not as a demobilisation trigger.")
+      : ("Named storms at tropical-storm strength or more, from best tracks "
+         + "since 1980. Operations commonly begin securing and demobilising "
+         + "when a cyclone is inside 1,000 nm, long before local seas respond, "
+         + "so this downtime is additional to the wave statistics above.");
   }
 
   function diSlotLabel(s) {

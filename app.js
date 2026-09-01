@@ -33,6 +33,16 @@
     for (k in window.TM_CONFIG_OVERRIDES) cfg[k] = window.TM_CONFIG_OVERRIDES[k];
   }
 
+  /* Cache busting. GitHub Pages sends a long max-age on static files, so a
+     deploy is invisible to anyone who has the site cached until it expires.
+     tools/stamp_build.py sets window.TM_BUILD on the deployed page and
+     versions the script tags; these fetches carry the same stamp so data
+     files turn over with the code. Undefined in local development, where the
+     URL is left clean. */
+  function vurl(u) {
+    return window.TM_BUILD ? u + (u.indexOf("?") < 0 ? "?" : "&") + "v=" + window.TM_BUILD : u;
+  }
+
   var D = window.TMData;
   var state = {
     provider: null,
@@ -147,7 +157,7 @@
     state.bathyPromise = new Promise(function (resolve, reject) {
       if (window.TM_BATHY_ENC) { resolve(); return; }
       var s2 = document.createElement("script");
-      s2.src = cfg.bathySrc;
+      s2.src = vurl(cfg.bathySrc);
       s2.onload = function () { resolve(); };
       s2.onerror = function () { reject(new Error("Depth data failed to load.")); };
       document.head.appendChild(s2);
@@ -169,7 +179,7 @@
     if (state.coastMetaState === "failed") return;
     if (!state.coastMetaState) {
       state.coastMetaState = "loading";
-      fetch(cfg.coastBase + "manifest.json").then(function (r) {
+      fetch(vurl(cfg.coastBase + "manifest.json")).then(function (r) {
         if (!r.ok) throw new Error("coast manifest " + r.status);
         return r.json();
       }).then(function (mf) {
@@ -189,7 +199,7 @@
     state.coastPump = (state.coastPump || 0) + 1;
     var id = wanted[0];
     state.map.markCoastTilePending(id);
-    fetch(cfg.coastBase + id + ".json").then(function (r) {
+    fetch(vurl(cfg.coastBase + id + ".json")).then(function (r) {
       if (!r.ok) throw new Error("coast tile " + r.status);
       return r.json();
     }).then(function (doc) {
@@ -208,7 +218,7 @@
   function loadAssetsData() {
     if (window.TM_ASSETS_DATA) return Promise.resolve(window.TM_ASSETS_DATA);
     if (cfg.dataBase === null) return Promise.reject(new Error("no data base"));
-    return fetch(cfg.dataBase + "assets.json").then(function (r) {
+    return fetch(vurl(cfg.dataBase + "assets.json")).then(function (r) {
       if (!r.ok) throw new Error("assets " + r.status);
       return r.json();
     });
@@ -1238,7 +1248,14 @@
     var res = state.cellData;
     var sel = monthIdxList();
     var lim = state.lastLimitP;
-    var span = Math.max(30, Math.min(120, 60));
+    /* The PDF map was pinned at 60 degrees of longitude, which is a
+       continental view: someone who had zoomed in to a field got a picture of
+       half an ocean with their site as a dot. It now follows the view on
+       screen, clamped so it is neither uselessly tight nor so wide the site
+       disappears. Zoomed all the way in that is about 3 degrees; never
+       having touched the zoom still gives the old 60. */
+    var vb = state.map.viewBounds();
+    var span = Math.max(1.5, Math.min(60, vb.lon1 - vb.lon0));
     var st = {
       cfg: cfg,
       meta: state.provider.meta,
@@ -1345,7 +1362,16 @@
       onDragMode: function (mode) {
         $("tm-zoom-win").setAttribute("aria-pressed", mode === "zoomwin" ? "true" : "false");
         $("tm-measure").setAttribute("aria-pressed", mode === "measure" ? "true" : "false");
-        $("tm-hint").hidden = mode === "measure";
+        /* The hint used to be HIDDEN in measure mode, which removed the only
+           thing on screen telling you what to do with the tool you just
+           armed. It now says what to do instead. */
+        if (mode === "measure") {
+          $("tm-hint").hidden = false;
+          $("tm-hint").textContent = "Click two points to measure. Drag to pan. Escape to finish.";
+        } else {
+          $("tm-hint").hidden = false;
+          $("tm-hint").textContent = "Click the map to choose a location";
+        }
       },
       onView: function () {
         /* legend zoom hints track visibility flips only */
@@ -1425,7 +1451,7 @@
         state.cycTracksLoaded = true;
         return Promise.resolve(true);
       }
-      return fetch(cfg.dataBase + "cyc/tracks.json").then(function (r) {
+      return fetch(vurl(cfg.dataBase + "cyc/tracks.json")).then(function (r) {
         if (!r.ok) throw new Error("no cyc tracks");
         return r.json();
       }).then(function (doc) {

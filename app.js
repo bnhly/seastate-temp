@@ -10,7 +10,7 @@
     dataBase: "data/",
     pdfLibSrc: "vendor/pdf-lib.min.js",
     bathySrc: "bathy.js",
-    coastHdSrc: "coastline_hd.js",
+    coastBase: "coast/",
     pdfDelivery: "download",   /* "inline" in the sandboxed preview build */
     limitDefault: 2,
     disclaimerLive: "Values are long term climatological estimates for open water derived from " +
@@ -157,25 +157,51 @@
     return state.bathyPromise;
   }
 
-  /* High-detail coastline: fetched once, the first time the view zooms past
-     the HD threshold. On failure the 50m coastline simply stays. */
+  /* High-detail coastline, TILED (web/coast/, built by build_coast_tiles.py).
+     The old single 2.5 MB file stalled Chrome at the swap: one giant parse,
+     one 412k-point Path2D, then full-world draws. Now the manifest loads
+     once past the tile zoom threshold and only the tiles in view are
+     fetched (a few at a time); the map draws them when the visible set is
+     complete and within its vertex budget, else it stays on the 50m coast.
+     On any failure the 50m coastline simply stays. */
   function ensureCoastHD() {
-    if (state.coastHDStarted) return;
-    state.coastHDStarted = true;
-    function apply() {
-      if (window.TM_COAST_HD_ENC) {
-        var rings = D.decodeDeltaRings(window.TM_COAST_HD_ENC,
-          window.TM_COAST_HD_SCALE || 100);
-        window.TM_COAST_HD_ENC = null;
-        state.map.setCoastHD(rings);
-      }
+    if (state.coastMetaState === "failed") return;
+    if (!state.coastMetaState) {
+      state.coastMetaState = "loading";
+      fetch(cfg.coastBase + "manifest.json").then(function (r) {
+        if (!r.ok) throw new Error("coast manifest " + r.status);
+        return r.json();
+      }).then(function (mf) {
+        state.coastMetaState = "ready";
+        state.map.setCoastMeta(mf);
+        pumpCoastTiles();
+      }).catch(function () { state.coastMetaState = "failed"; });
+      return;
     }
-    if (window.TM_COAST_HD_ENC) { apply(); return; }
-    var s2 = document.createElement("script");
-    s2.src = cfg.coastHdSrc;
-    s2.onload = apply;
-    s2.onerror = function () {};
-    document.head.appendChild(s2);
+    if (state.coastMetaState === "ready") pumpCoastTiles();
+  }
+
+  function pumpCoastTiles() {
+    if (state.coastPump >= 4) return;
+    var wanted = state.map.coastTilesWanted();
+    if (!wanted.length) return;
+    state.coastPump = (state.coastPump || 0) + 1;
+    var id = wanted[0];
+    state.map.markCoastTilePending(id);
+    fetch(cfg.coastBase + id + ".json").then(function (r) {
+      if (!r.ok) throw new Error("coast tile " + r.status);
+      return r.json();
+    }).then(function (doc) {
+      state.map.addCoastTile(id,
+        D.decodeDeltaRings(doc.f || [], state.map.coastScale()),
+        D.decodeDeltaRings(doc.s || [], state.map.coastScale()));
+    }).catch(function () {
+      /* leave it pending-failed; the 50m coast covers the gap */
+    }).then(function () {
+      state.coastPump -= 1;
+      pumpCoastTiles();
+    });
+    pumpCoastTiles();
   }
 
   function loadAssetsData() {

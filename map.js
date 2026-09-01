@@ -93,11 +93,86 @@
     return pathFromRings(window.TM_COAST || [], true);
   };
 
-  /* High-detail coastline for zoomed views (rings decoded by the caller).
-     Only the DRAWN land swaps; the 50m set stays the data layer. */
-  TMMap.prototype.setCoastHD = function (rings) {
-    this.hdLandPath = pathFromRings(rings, true);
+  /* High-detail coastline, tiled (web/coast/). Only the DRAWN land swaps;
+     the 50m set stays the data layer. Each tile holds one fill Path2D
+     (rings clipped to the tile, seams butt invisibly) and one stroke
+     Path2D (original coast only, so tile-edge cuts are never outlined).
+     Tiles draw only when every visible manifest tile is loaded and the
+     visible vertex total fits the budget; otherwise the 50m coast draws,
+     which is also what active gestures always use. */
+  TMMap.prototype.setCoastMeta = function (mf) {
+    this.coastMeta = mf;
+    this.coastTiles = {};
+    this.coastPending = {};
     this.render();
+  };
+
+  TMMap.prototype.coastScale = function () {
+    return (this.coastMeta && this.coastMeta.scale) || 1000;
+  };
+
+  TMMap.prototype.markCoastTilePending = function (id) {
+    if (!this.coastPending) this.coastPending = {};
+    this.coastPending[id] = true;
+  };
+
+  TMMap.prototype.addCoastTile = function (id, fillRings, strokeLines) {
+    if (!this.coastTiles) this.coastTiles = {};
+    this.coastTiles[id] = {
+      fill: pathFromRings(fillRings, true),
+      stroke: pathFromRings(strokeLines, false)
+    };
+    this.render();
+  };
+
+  TMMap.prototype.visibleCoastIds = function (view) {
+    var v = view || this.view;
+    var t = (this.coastMeta && this.coastMeta.tile_deg) || 15;
+    var halfW = this.cssW / (2 * v.scale);
+    var latTop = invMercY(mercY(v.cLat) + this.cssH / (2 * v.scale));
+    var latBot = invMercY(mercY(v.cLat) - this.cssH / (2 * v.scale));
+    var ids = [], seen = {}, ti, tj, lon0, lat0, id;
+    var ti0 = Math.floor((v.cLon - halfW) / t), ti1 = Math.floor((v.cLon + halfW) / t);
+    var tj0 = Math.floor(latBot / t), tj1 = Math.floor(latTop / t);
+    for (ti = ti0; ti <= ti1; ti++) {
+      lon0 = ((ti * t + 180) % 360 + 360) % 360 - 180;
+      for (tj = tj0; tj <= tj1; tj++) {
+        lat0 = tj * t;
+        if (lat0 < -90 || lat0 >= 90) continue;
+        id = "c_" + lat0 + "_" + lon0;
+        if (!seen[id]) { seen[id] = true; ids.push(id); }
+      }
+    }
+    return ids;
+  };
+
+  TMMap.prototype.coastTilesWanted = function () {
+    if (!this.coastMeta || this.view.scale < HD_COAST_SCALE) return [];
+    var ids = this.visibleCoastIds(), out = [], i, id;
+    for (i = 0; i < ids.length; i++) {
+      id = ids[i];
+      if (this.coastMeta.tiles[id] !== undefined &&
+          !this.coastTiles[id] && !(this.coastPending && this.coastPending[id])) {
+        out.push(id);
+      }
+    }
+    return out;
+  };
+
+  /* The loaded tiles covering this view, or null to draw the 50m coast. */
+  TMMap.prototype.readyCoastTiles = function (view) {
+    if (!this.coastMeta || view.scale < HD_COAST_SCALE) return null;
+    var ids = this.visibleCoastIds(view), out = [], total = 0, i, id, npts;
+    for (i = 0; i < ids.length; i++) {
+      id = ids[i];
+      npts = this.coastMeta.tiles[id];
+      if (npts === undefined) continue;        /* open-ocean tile: no file */
+      if (!this.coastTiles[id]) return null;   /* still loading: stay 50m */
+      total += npts;
+      out.push(this.coastTiles[id]);
+    }
+    if (!out.length || total > HD_PTS_BUDGET) return null;
+    return out;
   };
 
   TMMap.prototype.hdWanted = function () {
@@ -228,7 +303,8 @@
      depths are DRAWN (200 / 1000 / 3000); the rest serve the click lookup. */
   var BATHY_STYLE = { 200: { a: 0.55, w: 1.3 }, 1000: { a: 0.4, w: 1 }, 3000: { a: 0.26, w: 1 } };
   var WELL_MIN_SCALE = 8; /* px per degree below which well markers hide */
-  var HD_COAST_SCALE = 8; /* px per degree past which the HD coastline draws */
+  var HD_COAST_SCALE = 16; /* px per degree past which coast tiles engage */
+  var HD_PTS_BUDGET = 90000; /* max visible tile vertices before 50m wins */
   var PIPE_MIN_SCALE = 4; /* px per degree below which pipelines hide */
   var MAX_SCALE = 320;    /* px per degree: ~4 deg across a desktop view. The
                              old cap of 80 stopped short of field scale (Ben,
@@ -420,15 +496,20 @@
         dpr * (cssW / 2 + (shift - view.cLon) * view.scale),
         dpr * (cssH / 2 + mercY(view.cLat) * view.scale)
       );
-      var useHD = this.hdLandPath && view.scale >= HD_COAST_SCALE &&
-          (!withChrome || !this.interacting);
-      var landP = useHD ? this.hdLandPath : this.landPath;
+      var hdTiles = (withChrome && this.interacting) ? null : this.readyCoastTiles(view);
       ctx.fillStyle = "#ddd8cb";
       ctx.lineJoin = "round";
-      ctx.fill(landP);
-      ctx.strokeStyle = "#b7b1a1";
-      ctx.lineWidth = 1 / view.scale;
-      ctx.stroke(landP);
+      if (hdTiles) {
+        for (var hi = 0; hi < hdTiles.length; hi++) ctx.fill(hdTiles[hi].fill);
+        ctx.strokeStyle = "#b7b1a1";
+        ctx.lineWidth = 1 / view.scale;
+        for (hi = 0; hi < hdTiles.length; hi++) ctx.stroke(hdTiles[hi].stroke);
+      } else {
+        ctx.fill(this.landPath);
+        ctx.strokeStyle = "#b7b1a1";
+        ctx.lineWidth = 1 / view.scale;
+        ctx.stroke(this.landPath);
+      }
       if (this.bordersPath) {
         ctx.strokeStyle = "rgba(122, 112, 94, 0.45)";
         ctx.lineWidth = 0.9 / view.scale;

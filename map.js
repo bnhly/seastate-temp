@@ -939,6 +939,8 @@
           ctx.moveTo(ax, ay - 4.5); ctx.lineTo(ax + 4.5, ay);
           ctx.lineTo(ax, ay + 4.5); ctx.lineTo(ax - 4.5, ay);
           ctx.closePath();
+        } else if (aa.t === "lng terminal") {
+          ctx.rect(ax - 3.2, ay - 3.2, 6.4, 6.4);
         } else {
           ctx.arc(ax, ay, 3.6, 0, 2 * Math.PI);
         }

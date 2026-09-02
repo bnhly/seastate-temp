@@ -277,6 +277,11 @@ html, body {
   width: 8px; height: 8px; background: #c2571f; border-radius: 50%;
   border: 1px solid #fff; flex: none;
 }
+
+.tm-lg-square {
+  width: 8px; height: 8px; background: #c2571f;
+  border: 1px solid #fff; flex: none;
+}
 .tm-lg-gap { height: 4px; }
 
 /* Controls */

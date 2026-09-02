@@ -263,6 +263,9 @@
       var rows = '<span class="tm-lg-title">Assets' + (assetsAreDemo() ? " (demo)" : "") + '</span>' +
         '<span class="tm-lg-row"><span class="tm-lg-diamond"></span>Platform</span>' +
         '<span class="tm-lg-row"><span class="tm-lg-dot"></span>Field</span>';
+      if (assetsHaveLng() && $("tm-f-lng").checked) {
+        rows += '<span class="tm-lg-row"><span class="tm-lg-square"></span>LNG terminal</span>';
+      }
       if (assetsHaveWells()) {
         var wellHint = (state.map && state.map.wellsVisible()) ? "" : " (zoom in)";
         rows += '<span class="tm-lg-row"><span class="tm-lg-dot" style="width:5px;height:5px"></span>Well' + wellHint + '</span>';
@@ -435,6 +438,13 @@
     var d = state.assetsData, i;
     if (!d) return false;
     for (i = 0; i < d.assets.length; i++) if (d.assets[i].t === "well") return true;
+    return false;
+  }
+
+  function assetsHaveLng() {
+    var d = state.assetsData, i;
+    if (!d) return false;
+    for (i = 0; i < d.assets.length; i++) if (d.assets[i].t === "lng terminal") return true;
     return false;
   }
 
@@ -1774,16 +1784,19 @@
 
     function applyAssetFilter() {
       var wantW = $("tm-f-wells").checked, wantP = $("tm-f-plats").checked, wantF = $("tm-f-fields").checked;
+      var wantL = $("tm-f-lng").checked;
       var activeOnly = $("tm-f-active").checked;
       var dmin = parseFloat($("tm-f-dmin").value), dmax = parseFloat($("tm-f-dmax").value);
       var txt = $("tm-f-text").value.trim().toLowerCase();
       var useDepth = !isNaN(dmin) || !isNaN(dmax);
-      var all = wantW && wantP && wantF && !activeOnly && !useDepth && !txt;
+      var all = wantW && wantP && wantF && wantL && !activeOnly && !useDepth && !txt;
       function fn(a) {
         var isW = a.t === "well", isP = (a.t || "").indexOf("platform") >= 0;
+        var isL = a.t === "lng terminal";
         if (isW && !wantW) return false;
         if (isP && !wantP) return false;
-        if (!isW && !isP && !wantF) return false;
+        if (isL && !wantL) return false;
+        if (!isW && !isP && !isL && !wantF) return false;
         if (isW && activeOnly && !wellInService(a)) return false;
         if (useDepth) {
           if (!a.d) return false;
@@ -1804,7 +1817,7 @@
       el.textContent = n2.toLocaleString() + " of " + list.length.toLocaleString() + " match";
     }
 
-    var fltIds = ["tm-f-wells", "tm-f-active", "tm-f-plats", "tm-f-fields", "tm-f-dmin", "tm-f-dmax", "tm-f-text"];
+    var fltIds = ["tm-f-wells", "tm-f-active", "tm-f-plats", "tm-f-fields", "tm-f-lng", "tm-f-dmin", "tm-f-dmax", "tm-f-text"];
     for (var fi = 0; fi < fltIds.length; fi++) {
       $(fltIds[fi]).addEventListener("input", function () {
         clearTimeout(state.fltTimer);
@@ -1829,6 +1842,7 @@
         state.map.setAssetLines(state.assetLines);
         $("tm-f-pipes-label").hidden = false;
       }
+      if (assetsHaveLng()) $("tm-f-lng-label").hidden = false;
       var att = [], i;
       for (i = 0; i < d.sources.length; i++) {
         if (d.sources[i].attribution && att.indexOf(d.sources[i].attribution) < 0) {

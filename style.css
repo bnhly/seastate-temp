@@ -594,3 +594,6 @@ html, body {
 .tm-prof th { font-weight: 600; color: #4a5560; }
 .tm-prof th:first-child, .tm-prof td:first-child { text-align: left; }
 .tm-prof-note { margin: 0 4px 8px; font-size: 11.4px; color: #5c6771; line-height: 1.4; }
+
+.tm-footer-links { font-size: 12.5px; margin: 0 0 8px; }
+.tm-footer-links a { color: var(--accent); }

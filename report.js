@@ -508,6 +508,12 @@
             if (state.cycLabel) snap.push(state.cycLabel);
             if (state.ensoLabel) snap.push("El Nino vs La Nina: " + state.ensoLabel);
             if (state.curLines) snap = snap.concat(state.curLines);
+            if (state.curProfile) {
+              snap.push(state.curProfile.head);
+              state.curProfile.rows.forEach(function (row) {
+                snap.push(row[0] + ": combined " + row[4] + " (tidal " + row[1] + ", wind-driven " + row[2] + ", background " + row[3] + ")");
+              });
+            }
             if (snap.length) {
               noteY -= 6;
               page.drawText("SITE SNAPSHOT", { x: nx, y: noteY, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
@@ -687,7 +693,38 @@
               for (ci = 0; ci < state.curLines.length && y4 > 150; ci++) {
                 y4 = drawWrapped(p4, fonts.reg, state.curLines[ci], M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 5;
               }
+              if (state.curProfile && state.curProfile.rows.length) {
+                /* the DNVGL-RP-C205 profile as a small table: five columns,
+                   right-aligned numbers, one row per depth */
+                var pr = state.curProfile, colX = [M, M + 150, M + 215, M + 290, M + 370], rr, cc, txt, tw2;
+                y4 = drawWrapped(p4, fonts.bold, pr.head, M, y4, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink)) - 3;
+                for (cc = 0; cc < pr.cols.length; cc++) {
+                  txt = pr.cols[cc];
+                  tw2 = fonts.bold.widthOfTextAtSize(txt, 7);
+                  p4.drawText(txt, { x: cc === 0 ? colX[cc] : colX[cc] + 40 - tw2, y: y4, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
+                }
+                y4 -= 10;
+                for (rr = 0; rr < pr.rows.length; rr++) {
+                  for (cc = 0; cc < pr.rows[rr].length; cc++) {
+                    txt = pr.rows[rr][cc];
+                    tw2 = fonts.reg.widthOfTextAtSize(txt, 7.5);
+                    p4.drawText(txt, { x: cc === 0 ? colX[cc] : colX[cc] + 40 - tw2, y: y4, size: 7.5, font: fonts.reg, color: rgb(P, COL.ink) });
+                  }
+                  y4 -= 10;
+                }
+                y4 -= 2;
+                y4 = drawWrapped(p4, fonts.reg, pr.note, M, y4, 7, PAGE_W - 2 * M, 9, rgb(P, COL.ink2)) - 6;
+              }
               y4 -= 12;
+            }
+
+            /* the closing sections need about 330 pt (two headed paragraphs,
+               the sources block and the call-to-action box at the foot); when
+               the exposure content has used the page, they get a page of their
+               own instead of running into the footer */
+            if (y4 < 330) {
+              p4 = addPage(doc, P, fonts, logo, "Notes", hdrSub);
+              y4 = PAGE_H - M - 44;
             }
 
             if (state.ensoLabel) {

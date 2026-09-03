@@ -21,9 +21,11 @@
     disclaimerDemo: "DEMONSTRATION MODE: every number shown is synthetic, generated from a " +
       "simplified parametric model so the tool can be evaluated before the real dataset is " +
       "built. Do not use these values for anything.",
-    termsNote: "Free to use for individual planning reference. Automated bulk extraction of " +
-      "the tool's data is not permitted; the underlying open datasets are available from the " +
-      "original providers credited below."
+    termsNote: "Free to use for individual planning reference, and free to cite: " +
+      "Thrust Maritime, Sea State Explorer, the location and the date you read it, with a " +
+      "link to the result. Automated bulk extraction of the tool's data tiles is not " +
+      "permitted; the underlying open datasets are available from the original providers " +
+      "credited below, and the methodology page states every source and derivation."
   };
 
   var cfg = {};
@@ -294,7 +296,10 @@
        the authoritative wording once fetched; these are the same strings,
        stated up front. */
     var parts = [state.provider.meta.attribution,
-      "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain)."];
+      "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain).",
+      "Coastline: Wessel, P., and W. H. F. Smith, A Global Self-consistent, Hierarchical, " +
+      "High-resolution Shoreline Database, J. Geophys. Res., 101, 8741-8743, 1996 (GSHHG, at " +
+      "close zoom) and Natural Earth 1:50m land (public domain, at world scale)."];
     parts.push(state.depthAttribution ||
       "Water depths: ETOPO 2022 Global Relief Model, NOAA National Centers for " +
       "Environmental Information (public domain).");
@@ -1082,20 +1087,26 @@
   }
 
   /* Current profile through the water column, combined the way
-     DNV-RP-C205 section 4.1.4 describes it: tidal + wind-generated +
-     circulation, each with its own depth variation, summed colinearly (the
-     code sums vectors; taking them aligned is the conservative reading).
-       tidal (4.1.4.3)  v_t(z) = v_t(0) x ((d - z) / d)^(1/7). The surface
-                        value is 8/7 x the modelled depth mean, because the
-                        1/7 profile averages to 7/8 of its surface value.
-       wind (4.1.4.4)   v_w(z) = k x U_1h,10m x (1 - z / d0) down to d0 =
-                        50 m, zero below; k = 0.03, the top of the code's
-                        0.015 to 0.03 range. U is the site's P90 10 m wind
-                        over the selected months (3 hourly reanalysis values
-                        sit close to hourly means).
-       circulation      the GLORYS residual P90: surface value at z = 0, the
-                        deepest modelled level's value at its depth, linear
-                        between, held constant below.
+     DNVGL-RP-C205 (August 2017 edition, seastate/DNVGL-RP-C205.pdf)
+     describes it. Clause map, checked against the text on 3 Sep 26:
+       4.1.3.3  total current = vector sum of wind generated, tidal and
+                circulational currents (summed here as if aligned, the
+                conservative reading)
+       4.1.4.1  tidal current with depth as a power law
+       4.1.4.2  wind generated current linear from z = -d0 to still water
+       4.1.4.3  the combined profile, with d0 = 50 m and alpha typically 1/7
+       4.1.4.4  v_wind(0) = k x U_1hour,10m, k = 0.015 to 0.03
+     Implementation:
+       tidal        v_t(z) = v_t(0) x ((d - z) / d)^(1/7). The surface value
+                    is 8/7 x the modelled depth mean, because the 1/7 profile
+                    averages to 7/8 of its surface value.
+       wind         v_w(z) = k x U x (1 - z / d0) down to d0 = 50 m, zero
+                    below; k = 0.03, the top of the range. U is the site's
+                    P90 10 m wind over the selected months (3 hourly
+                    reanalysis values sit close to hourly means).
+       circulation  the GLORYS residual P90: surface value at z = 0, the
+                    deepest modelled level's value at its depth, linear
+                    between, held constant below.
      The modelled surface residual already holds the wind drift GLORYS
      resolves, so adding the code's wind term is conservative near the
      surface; the note under the table says so. */
@@ -1214,14 +1225,17 @@
       p.textContent = lines[i];
       box.appendChild(p);
     }
-    /* DNV-RP-C205 4.1.4 profile table, plus text rows for the PDF / copy text */
+    /* DNVGL-RP-C205 profile table; the PDF draws it as a table from
+       state.lastCurProfile rather than as prose lines (seven extra lines
+       pushed the report's last page into its footer, 3 Sep 26) */
     var prof = curProfile(cs, depthM, windP90), profLines = [];
+    state.lastCurProfile = null;
     if (prof && prof.rows.length) {
       var parts = [];
       if (prof.vt0 !== null) parts.push("spring tide");
       if (prof.vw0 !== null) parts.push("P90 wind");
       if (prof.hasSurfBg) parts.push("P90 background");
-      var head = "Through the water column (DNV-RP-C205 4.1.4 combination, " + parts.join(" + ") + "), m/s";
+      var head = "Through the water column (DNVGL-RP-C205 4.1.4.3 combination, " + parts.join(" + ") + "), m/s";
       var tbl = document.createElement("table"), tr, th, td, j, r, cols;
       tbl.className = "tm-prof";
       var cap = document.createElement("caption");
@@ -1235,7 +1249,6 @@
         tr.appendChild(th);
       }
       tbl.appendChild(tr);
-      profLines.push(head + ":");
       for (i = 0; i < prof.rows.length; i++) {
         r = prof.rows[i];
         tr = document.createElement("tr");
@@ -1246,18 +1259,16 @@
           tr.appendChild(td);
         }
         tbl.appendChild(tr);
-        profLines.push(r.label + ": combined " + fmt2(r.tot) + " (tidal " + fmt2(r.vt) +
-          ", wind-driven " + fmt2(r.vw) + ", background " + fmt2(r.vc) + ")");
       }
       box.appendChild(tbl);
       var nb = [];
       if (prof.vt0 !== null) {
-        nb.push("Tidal: spring peak of the depth mean scaled to the surface (8/7) and taken down the 1/7 power profile of 4.1.4.3" +
+        nb.push("Tidal: spring peak of the depth mean scaled to the surface (8/7) and taken down the power-law profile of 4.1.4.1 with the 1/7 exponent of 4.1.4.3" +
           (prof.d ? " at " + Math.round(prof.d).toLocaleString() + " m water depth" : " (surface only: water depth unknown here)") + ".");
       }
       if (prof.vw0 !== null) {
         nb.push("Wind-driven: 0.03 x the site's P90 10 m wind of " + prof.windP90.toFixed(1) +
-          " m/s, falling linearly to zero at 50 m (4.1.4.4); at the " + DNV_N001_WIND +
+          " m/s (4.1.4.4, k at the top of its 0.015 to 0.03 range), falling linearly to zero at d0 = 50 m (4.1.4.2 and 4.1.4.3); at the " + DNV_N001_WIND +
           " m/s design wind of DNV-ST-N001 11.12.2.3 the surface value would be " +
           (DNV_K_WIND * DNV_N001_WIND).toFixed(2) + " m/s.");
       }
@@ -1266,14 +1277,25 @@
           (prof.hasBottom ? " at the surface and at the deepest modelled level, linear between and held below" : " at the surface, held through the column") +
           "; it already contains the wind drift the model resolves, so the combined column is conservative near the surface.");
       }
-      nb.push("Components are summed as if aligned. Climatological figures, not extreme-value design values.");
+      nb.push("The code takes the vector sum (4.1.3.3); the components are summed here as if aligned. Climatological figures, not extreme-value design values.");
       p = document.createElement("p");
       p.className = "tm-prof-note";
       p.textContent = nb.join(" ");
       box.appendChild(p);
-      profLines.push(nb.join(" "));
+      state.lastCurProfile = {
+        head: head,
+        rows: prof.rows.map(function (rr) {
+          return [rr.label, fmt2(rr.vt), fmt2(rr.vw), fmt2(rr.vc), fmt2(rr.tot)];
+        }),
+        cols: cols,
+        note: "Tidal: 8/7 x the modelled depth mean on the 4.1.4.1 power law (exponent 1/7). " +
+          (prof.vw0 !== null ? "Wind-driven: 0.03 x the P90 10 m wind of " + prof.windP90.toFixed(1) +
+            " m/s (4.1.4.4), linear to zero at 50 m (4.1.4.3). " : "") +
+          (prof.hasSurfBg ? "Background: modelled residual P90, surface to deepest level, held below; it already holds resolved wind drift. " : "") +
+          "Summed as if aligned (the code takes the vector sum, 4.1.3.3). Climatology, not design values."
+      };
     }
-    state.lastCur = lines.length ? lines.concat(profLines) : null;
+    state.lastCur = lines.length ? lines : null;
   }
 
   /* ---------- shareable URLs ----------
@@ -1622,6 +1644,7 @@
       windLabel: state.lastWind,
       windowsLabel: state.lastWindows,
       curLines: state.lastCur,
+      curProfile: state.lastCurProfile,
       cycLabel: state.lastCyc,
       diurnalLabel: state.lastDiurnal,
       ensoLabel: state.lastEnso,

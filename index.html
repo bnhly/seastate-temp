@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Free monthly wave, wind, extreme sea state and weather window statistics for any offshore location, with a one page PDF summary.">
 <meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=4977722fbe">
+<link rel="stylesheet" href="style.css?v=91668c052f">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -228,11 +228,11 @@
             <figcaption>Current and tide at this point</figcaption>
             <div id="tm-cur" class="tm-cur-lines"></div>
             <p class="tm-fig-note">Tidal surface and seabed figures are derived from the
-            modelled water-column mean through the 1/7th power velocity profile of
-            DNV-RP-C205 4.1.4.3 at this water depth; measured profiles vary. Slack-water
-            durations refer to the column mean. Background currents are model values at
-            real depth levels. The profile table combines the parts as in DNV-RP-C205
-            4.1.4 (see Methodology).</p>
+            modelled water-column mean through the power-law velocity profile of
+            DNVGL-RP-C205 4.1.4.1 (exponent 1/7, 4.1.4.3) at this water depth; measured
+            profiles vary. Slack-water durations refer to the column mean. Background
+            currents are model values at real depth levels. The profile table combines
+            the parts as in DNVGL-RP-C205 4.1.4.3 (see Methodology).</p>
           </figure>
         </div>
 
@@ -303,6 +303,9 @@
     </section>
 
     <footer class="tm-footer">
+      <p class="tm-footer-links"><a href="methodology.html">Methodology and sources</a> &middot;
+        <a href="locations/index.html">Sea state by location</a> &middot;
+        <a href="llms.txt">llms.txt</a></p>
       <p id="tm-disclaimer"></p>
       <p id="tm-terms"></p>
       <p id="tm-attribution"></p>
@@ -312,14 +315,14 @@
 
 <div class="tm-tip" id="tm-tip" hidden></div>
 
-<script>window.TM_BUILD="4977722fbe";</script>
-<script src="coastline.js?v=4977722fbe"></script>
-<script src="borders.js?v=4977722fbe"></script>
-<script src="places.js?v=4977722fbe"></script>
-<script src="data.js?v=4977722fbe"></script>
-<script src="map.js?v=4977722fbe"></script>
-<script src="chart.js?v=4977722fbe"></script>
-<script src="report.js?v=4977722fbe"></script>
-<script src="app.js?v=4977722fbe"></script>
+<script>window.TM_BUILD="91668c052f";</script>
+<script src="coastline.js?v=91668c052f"></script>
+<script src="borders.js?v=91668c052f"></script>
+<script src="places.js?v=91668c052f"></script>
+<script src="data.js?v=91668c052f"></script>
+<script src="map.js?v=91668c052f"></script>
+<script src="chart.js?v=91668c052f"></script>
+<script src="report.js?v=91668c052f"></script>
+<script src="app.js?v=91668c052f"></script>
 </body>
 </html>

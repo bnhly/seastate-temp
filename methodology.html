@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Methodology and sources | Sea State Explorer | Thrust Maritime</title>
+<meta name="description" content="How the Sea State Explorer computes its wave, wind, weather window, extreme sea state, current, tide, cyclone, depth and asset figures: every data source, licence, definition and derivation, stated from the code that builds the site.">
+<link rel="canonical" href="https://seastate.thrustm.com/methodology.html">
+<meta name="theme-color" content="#14304a">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Thrust Maritime">
+<meta property="og:title" content="Sea State Explorer: methodology and sources">
+<meta property="og:description" content="Data sources, licences, definitions and derivations behind every number the Sea State Explorer shows.">
+<meta property="og:url" content="https://seastate.thrustm.com/methodology.html">
+<meta property="og:image" content="https://seastate.thrustm.com/og-image.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Sea State Explorer: methodology and sources",
+  "name": "Sea State Explorer: methodology and sources",
+  "url": "https://seastate.thrustm.com/methodology.html",
+  "inLanguage": "en",
+  "dateModified": "2026-09-03",
+  "description": "How the Sea State Explorer computes its wave, wind, weather window, extreme sea state, current, tide, cyclone, depth and asset figures: every data source, licence, definition and derivation, stated from the code that builds the site.",
+  "author": { "@type": "Organization", "name": "Thrust Maritime", "url": "https://www.thrustm.com" },
+  "publisher": { "@type": "Organization", "name": "Thrust Maritime", "url": "https://www.thrustm.com" },
+  "isPartOf": { "@type": "WebApplication", "name": "Sea State Explorer", "url": "https://seastate.thrustm.com/" },
+  "about": [
+    "significant wave height exceedance",
+    "weather windows",
+    "metocean climatology",
+    "ERA5 reanalysis",
+    "WAVERYS reanalysis",
+    "tidal stream harmonic analysis",
+    "GLORYS12 currents",
+    "tropical cyclone exposure",
+    "offshore oil and gas infrastructure"
+  ]
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #f9f9f7; color: #0b0b0b;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  .page { max-width: 860px; margin: 0 auto; padding: 18px 20px 40px; }
+  .brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 2px 10px; }
+  .brand .mark { display: block; line-height: 0; }
+  .brand .mark img { display: block; height: 34px; width: auto; }
+  .brand .sep { width: 1px; height: 14px; background: #c3c2b7; }
+  .brand .tool { font-weight: 600; font-size: 19px; color: #0b0b0b; text-decoration: none; }
+  .brand .tool:hover { text-decoration: underline; }
+  .back { margin: 10px 0 18px; font-size: 13.5px; }
+  .back a { color: #2a78d6; text-decoration: none; }
+  .back a:hover { text-decoration: underline; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 10px; font-weight: 650; }
+  h2 { font-size: 21px; margin: 44px 0 10px; padding-top: 10px; border-top: 1px solid #e1e0d9; font-weight: 650; }
+  h3 { font-size: 16.5px; margin: 26px 0 6px; font-weight: 650; }
+  h4 { font-size: 15px; margin: 18px 0 4px; font-weight: 650; color: #52514e; }
+  p, li { max-width: 74ch; }
+  p { margin: 0 0 12px; }
+  ul, ol { padding-left: 22px; margin: 0 0 12px; }
+  li { margin: 0 0 6px; }
+  a { color: #2a78d6; }
+  .lede { font-size: 17px; color: #52514e; max-width: 66ch; }
+  .meta { font-size: 13px; color: #898781; }
+  .toc { background: #fcfcfb; border: 1px solid rgba(11, 11, 11, 0.10); border-radius: 10px; padding: 14px 18px; margin: 18px 0 28px; }
+  .toc ol { margin: 6px 0 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .toc .sub { list-style: none; padding-left: 14px; font-size: 13.5px; margin: 4px 0 6px; }
+  .toc .sub li { display: inline; margin: 0; }
+  .toc .sub li:after { content: " \00b7 "; color: #898781; }
+  .toc .sub li:last-child:after { content: ""; }
+  .toc .title { font-weight: 650; font-size: 13px; letter-spacing: 0.06em; color: #52514e; text-transform: uppercase; }
+  code, .f {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; background: #f1f0ec; border-radius: 4px; padding: 1px 5px;
+  }
+  pre.f {
+    display: block; padding: 10px 12px; margin: 8px 0 12px; overflow-x: auto;
+    line-height: 1.5; max-width: 100%; white-space: pre;
+  }
+  .note {
+    background: #fcfcfb; border-left: 3px solid #2a78d6; padding: 8px 12px; margin: 10px 0 14px;
+    color: #52514e; font-size: 14px; max-width: 74ch;
+  }
+  .warn { border-left-color: #eda100; background: #fff4d6; color: #6d5100; }
+  .wrap { overflow-x: auto; margin: 8px 0 16px; }
+  table { border-collapse: separate; border-spacing: 0; font-size: 13.5px; min-width: 520px; width: 100%; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 10px 6px 0; border-bottom: 1px solid #e1e0d9; }
+  th { font-weight: 650; color: #52514e; border-bottom: 1px solid #c3c2b7; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .quote { font-style: italic; }
+  .cta {
+    margin-top: 26px; padding: 18px; background: #14304a; color: #e8eef4; border-radius: 10px;
+  }
+  .cta h2 { margin: 0 0 6px; font-size: 17px; color: #fff; border: none; padding: 0; }
+  .cta p { margin: 4px 0; max-width: 720px; }
+  .cta a { color: #9ec5f4; font-weight: 600; }
+  footer { margin-top: 18px; color: #898781; font-size: 12px; }
+  footer p { margin: 6px 0; max-width: 900px; }
+  .attr p { font-size: 13.5px; }
+  .attr .who { font-weight: 650; color: #52514e; }
+  .url { word-break: break-all; }
+  @media (max-width: 560px) {
+    .brand .mark img { height: 26px; }
+    h1 { font-size: 25px; }
+    h2 { font-size: 19px; }
+    .page { padding: 14px 14px 30px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .toc, .back { display: none; }
+    a { color: #0b0b0b; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="brand">
+    <a class="mark" href="https://www.thrustm.com" target="_blank" rel="noopener" aria-label="Thrust Maritime"><img src="assets/thrust-maritime-logo.png" alt="Thrust Maritime"></a>
+    <span class="sep"></span>
+    <a class="tool" href="index.html">Sea State Explorer</a>
+  </header>
+
+  <p class="back"><a href="index.html">&larr; Back to the explorer</a></p>
+
+  <h1>Methodology and sources</h1>
+
+  <p class="lede">What the Sea State Explorer computes, from which data, by what rule. Written for metocean engineers, naval architects and anyone, human or automated, who needs to understand or cite what the tool shows.</p>
+
+  <p class="meta">Every statement on this page is taken from the code that builds the dataset and draws the page (the builders under <code>tools/</code> and the browser code in <code>data.js</code> and <code>app.js</code>), not from memory. Checked against that code on 3 September 2026. Where a figure depends on the dataset that happens to be deployed, this page says where to read it on the explorer instead of stating it.</p>
+
+  <nav class="toc" aria-label="Contents">
+    <span class="title">Contents</span>
+    <ol>
+      <li><a href="#answers">What the tool answers, and what it does not</a></li>
+      <li><a href="#sources">Data sources</a></li>
+      <li><a href="#definitions">Definitions and derivations</a>
+        <ul class="sub">
+          <li><a href="#grid">Grid and nearest cell</a></li>
+          <li><a href="#validity">Samples and validity mask</a></li>
+          <li><a href="#exceedance">Exceedance</a></li>
+          <li><a href="#months">Combining months</a></li>
+          <li><a href="#limit">Operational limit</a></li>
+          <li><a href="#meanhs">Mean Hs</a></li>
+          <li><a href="#tp">Peak period</a></li>
+          <li><a href="#direction">Direction</a></li>
+          <li><a href="#wind">Wind</a></li>
+          <li><a href="#extremes">Extremes</a></li>
+          <li><a href="#windows">Weather windows</a></li>
+          <li><a href="#diurnal">Across the day</a></li>
+          <li><a href="#scatter">Hs against Tp</a></li>
+          <li><a href="#enso">ENSO phase</a></li>
+          <li><a href="#cyclones">Cyclone exposure</a></li>
+          <li><a href="#depth">Water depth</a></li>
+        </ul>
+      </li>
+      <li><a href="#currents">Currents and tides</a></li>
+      <li><a href="#assets">Assets layer</a></li>
+      <li><a href="#limitations">Limitations and known gaps</a></li>
+      <li><a href="#cite">Citing, sharing, and asking for a study</a></li>
+      <li><a href="#licences">Licences and attributions</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="answers">1. What the tool answers, and what it does not</h2>
+
+  <p>Click a point at sea, choose calendar months, and the tool reports how the sea behaved at the nearest data cell over the whole record, month by month. Everything shown is a long term statistic of a numerical reanalysis: a wave model run for decades and constrained by observations, sampled every 3 hours on a global grid. Nothing on the page is a measurement at your point, and nothing is a forecast.</p>
+
+  <p>What it answers, for the selected point and months:</p>
+  <ul>
+    <li>the share of time significant wave height <b>Hs</b> is at or above each of fifteen thresholds, and at your own operational limit;</li>
+    <li>mean Hs, where waves and wind come from, and how the peak wave period is distributed;</li>
+    <li>typical and top-decile 10 m wind speed;</li>
+    <li>the 99th and 99.9th percentile sea states, and the statistically roughest month;</li>
+    <li>how many calm spells of a given length a typical year gives;</li>
+    <li>whether conditions follow the sun through the day;</li>
+    <li>the Hs against peak period occurrence table;</li>
+    <li>tropical cyclone exposure within fixed rings of the point;</li>
+    <li>water depth, tidal stream, slack water and background current;</li>
+    <li>the nearest mapped oil and gas asset.</li>
+  </ul>
+
+  <p>What it does not do:</p>
+  <ul>
+    <li><b>No measurements.</b> The values come from reanalysis grid cells 0.5 or 0.2 degrees wide (see <a href="#sources">Data sources</a>). The tool serves the nearest cell and states the distance to it; it does not interpolate between cells.</li>
+    <li><b>No return period design values.</b> The line <span class="quote">"1 sea state in 100 here is above X m and 1 in 1000 above Y m (3 hour samples, all year)"</span> means exactly that: X is the 99th percentile and Y the 99.9th percentile of the 3-hourly Hs samples over the whole record, all months pooled. It is not a 1-in-100-year or 1-in-1000-year value. No extreme value distribution is fitted anywhere in the tool.</li>
+    <li><b>No forecast.</b> Every number is a long term average or percentile.</li>
+    <li><b>No design use.</b> The disclaimer on the explorer reads: <span class="quote">"Values are long term climatological estimates for open water derived from reanalysis data. They are not forecasts, may underestimate extreme conditions including tropical cyclones, and are unreliable close to coastlines and in sheltered or shallow water. Not for design, navigation or operational decision making. No warranty is given."</span></li>
+  </ul>
+
+  <h2 id="sources">2. Data sources</h2>
+
+  <h3 id="waves">2.1 Wave reanalysis: ERA5 or WAVERYS</h3>
+
+  <p>Two builders exist and write the same tile format, so the explorer runs on either. Which one a deployment uses is stated on the explorer in two places: the <b>data point line</b> under the location in the results rail (its shape is "Data point [cell centre] ([grid]&deg; grid), [N] km from your click &middot; [source label], [period] &middot; [n] samples", where the source label reads for example "ERA5 reanalysis (ECMWF / Copernicus C3S)" or "WAVERYS wave reanalysis (Copernicus Marine) + ERA5 wind"), and the <b>attribution line</b> at the foot of the explorer, which is the manifest's own attribution sentence. This page describes both builders; the source label and period on the explorer tell you which applies.</p>
+
+  <h4>ERA5 (builder <code>tools/build_dataset_era5.py</code>)</h4>
+  <ul>
+    <li>Dataset: ECMWF ERA5, requested from the Copernicus Climate Data Store as <code>reanalysis-era5-single-levels</code> on a 0.5 by 0.5 degree grid, at 00, 03, 06, 09, 12, 15, 18 and 21 UTC every day.</li>
+    <li>Variables: significant height of combined wind waves and swell (<code>swh</code>, the Hs used everywhere), significant height of wind waves and of total swell, mean wave period, peak wave period (<code>pp1d</code>), mean wave direction (<code>mwd</code>), and the 10 m wind components <code>u10</code> and <code>v10</code>.</li>
+    <li>Grid: cell centres from 90&deg; S to 90&deg; N every 0.5&deg; (361 rows) and from 180&deg; W every 0.5&deg; (720 columns). Tiles are 10 degree boxes; the nearest-cell search refuses points more than 350 km from any cell.</li>
+    <li>Period: whatever span was downloaded, named in the manifest and on the explorer. Spans built separately (for example 1980 to 2009 and 2010 to 2024) can be merged by adding their accumulators; the merge refuses overlapping months.</li>
+  </ul>
+
+  <h4>WAVERYS (builder <code>tools/build_dataset_waverys.py</code>)</h4>
+  <ul>
+    <li>Dataset: Copernicus Marine global wave reanalysis, product GLOBAL_MULTIYEAR_WAV_001_032, dataset <code>cmems_mod_glo_wav_my_0.2deg_PT3H-i</code> (the MFWAM model with altimeter assimilation), 3 hourly.</li>
+    <li>Variables: <code>VHM0</code> (Hs), <code>VTPK</code> (peak period), <code>VMDR</code> (mean wave direction, the direction waves come from).</li>
+    <li>Grid: 0.2 degree cells from 80&deg; S to 90&deg; N (851 rows by 1800 columns). Tiles are 5 degree boxes; the nearest-cell search refuses points more than 150 km from any cell. A source file that does not cover the top row leaves it as no data.</li>
+    <li>Wind: WAVERYS carries no 10 m wind. The wind mean and P90, the wind rose, the wind half of the daily cycle and the ENSO phase fields are grafted at emit time from an ERA5 checkpoint, taking the nearest 0.5 degree ERA5 cell (nearest row, nearest column with wrap at the date line). A grafted field is only written where the ERA5 source cell itself passes the ERA5 validity rule (<a href="#validity">3.2</a>). The attribution line then adds "Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid" with the span of the wind record, which can differ from the wave period.</li>
+    <li>Peak period: the WAVERYS builder keeps a plain histogram of peak period in 24 one-second bins from 2 s, not the joint Hs against Tp table.</li>
+  </ul>
+
+  <p>Both builders write a download ledger (<code>audit.jsonl</code>: one line per source file with its SHA256, size and the samples it added) and are covered by <code>tools/verify_dataset.py</code>, which reconciles the ledger to the checkpoint, re-emits the tiles and requires them to be bit-identical to the deployed files, recomputes sampled cells with independent code and runs invariants over every tile. <code>tools/validate_waves.py</code> compares the served tile against measured buoy records where those are available.</p>
+
+  <h3 id="src-joint">2.2 Hs against Tp occurrence tables</h3>
+  <p>The scatter table is its own tile set (<code>joint/</code>, written by <code>tools/emit_joint_tiles.py</code>) from the ERA5 checkpoint, aggregated over 1.0 degree blocks. It carries its own source label and period, printed in the note under the table on the explorer, and these can differ from the wave backbone's. See <a href="#scatter">3.13</a>.</p>
+
+  <h3 id="src-currents">2.3 Currents and tides (Copernicus Marine)</h3>
+  <p>Builder <code>tools/build_currents_cmems.py</code>. Two products, one tile set (<code>cur/</code>, 5 degree tiles; a click uses the nearest cell within 25 km when the tidal solution is present, 60 km otherwise):</p>
+  <ul>
+    <li><b>Tidal stream:</b> the hourly global merged surface currents of the analysis and forecast system (product GLOBAL_ANALYSISFORECAST_PHY_001_024, dataset <code>cmems_mod_glo_phy_anfc_merged-uv_PT1H-i</code>), variables <code>utide</code> and <code>vtide</code>: a barotropic (depth averaged) FES-forced tidal solution on the native 1/12 degree grid. The builder fits 90 days of hourly fields starting on the date given at build time (default 1 January 2025); the window is recorded in the currents manifest as <code>tide_window</code>.</li>
+    <li><b>Background current:</b> the GLORYS12 global ocean reanalysis (product GLOBAL_MULTIYEAR_PHY_001_030, dataset <code>cmems_mod_glo_phy_my_0.083deg_P1D-m</code>), daily mean <code>uo</code> and <code>vo</code> at six depth levels: 0.494, 29.444, 77.853, 155.850, 318.127 and 643.566 m. The native 1/12 degree grid is decimated by three to 1/4 degree. Years are given at build time (builder default 2012 to 2021) and recorded in the manifest as <code>bg_period</code>. GLORYS excludes tides by construction, so this is the non-tidal residual (wind driven, density driven and eddy flow).</li>
+  </ul>
+
+  <h3 id="src-depth">2.4 Water depth: ETOPO 2022</h3>
+  <p>Builder <code>tools/grab_depth.py</code>. The ETOPO 2022 Global Relief Model, 60 arc-second surface elevation grid from NOAA National Centers for Environmental Information, block-averaged (6 by 6 cells) to 0.1 degree and stored as integer metres in 10 degree tiles of 100 by 100 cells (<code>depth/</code>). Tiles with no sea at all are not written.</p>
+
+  <h3 id="src-ne">2.5 Coastlines, depth contours, borders and place names</h3>
+  <ul>
+    <li>Natural Earth 1:50m land polygons (<code>coastline.js</code>): the world view coastline, the 1 degree land mask used by the demonstration mode, and the sea test for the asset pipeline cut (<a href="#assets">5</a>).</li>
+    <li>Natural Earth 1:10m bathymetry polygons at 200, 1,000, 2,000 and 3,000 m (<code>bathy.js</code>, builder <code>tools/build_bathy.py</code>): the depth band fallback and the world-view depth contours. Deeper levels are deliberately not included.</li>
+    <li>Natural Earth 1:50m admin-0 boundary lines on land (<code>borders.js</code>).</li>
+    <li>Natural Earth populated places, the 1:50m set plus coastal additions from the 1:10m set (<code>places.js</code>).</li>
+    <li>Zoomed-in coast tiles (<code>coast/</code>, builder <code>tools/build_coast_tiles.py</code>): built either from GSHHS, the Global Self-consistent Hierarchical High-resolution Shoreline database (Wessel and Smith, 1996), or from Natural Earth 1:10m land and minor islands. The tile manifest says which: 5 degree tiles at 0.0001 degree precision for GSHHS, 15 degree tiles at 0.001 degree for Natural Earth.</li>
+  </ul>
+
+  <h3 id="src-cyc">2.6 Tropical cyclones: IBTrACS</h3>
+  <p>Builder <code>tools/build_cyclones.py</code>. IBTrACS version 4 (release v04r01), the "since 1980" list CSV from NOAA NCEI, which merges every agency's best tracks. Wind is read from <code>USA_WIND</code> (1-minute sustained, the basis of the Saffir-Simpson thresholds used on the page) and only where that is absent from <code>WMO_WIND</code>.</p>
+
+  <h3 id="src-oni">2.7 ENSO phase: NOAA ONI</h3>
+  <p>NOAA Climate Prediction Center's Oceanic Ni&ntilde;o Index (<code>oni.ascii.txt</code>: the 3-month running mean sea surface temperature anomaly in the Ni&ntilde;o 3.4 region, ERSSTv5). The table is archived with each build and its SHA256 written to the ledger, so a classification can be reproduced after NOAA revises the series.</p>
+
+  <h3 id="src-assets">2.8 Oil and gas asset registers</h3>
+  <p>Builder <code>tools/build_assets.py</code> with <code>ga_ingest.py</code>, <code>anp_ingest.py</code> and <code>fetch_intl.py</code>. Each source is optional; a source that cannot be fetched is a log line, not a missing build. The deployed <code>assets.json</code> lists exactly the sources it contains, and the explorer prints each one's attribution sentence in its footer. The identifiers below are the source ids the builder writes.</p>
+  <div class="wrap">
+  <table>
+    <tr><th>Source id</th><th>What it contributes</th><th>Provider and licence</th></tr>
+    <tr><td><code>goget</code></td><td>Offshore field unit centroids (rows marked offshore only)</td><td>Global Oil &amp; Gas Extraction Tracker, Global Energy Monitor, CC BY 4.0</td></tr>
+    <tr><td><code>gem-ggit</code></td><td>Gas pipeline routes, offshore segments only</td><td>Global Gas Infrastructure Tracker, Global Energy Monitor, CC BY 4.0</td></tr>
+    <tr><td><code>gem-goit</code></td><td>Oil and NGL pipeline routes, offshore segments only</td><td>Global Oil Infrastructure Tracker, Global Energy Monitor, CC BY 4.0</td></tr>
+    <tr><td><code>gem-lng</code></td><td>LNG terminals, one per site (floating units marked FSRU or FLNG)</td><td>Global Gas Infrastructure Tracker, Global Energy Monitor, CC BY 4.0</td></tr>
+    <tr><td><code>osm</code></td><td>Offshore platforms (<code>man_made=offshore_platform</code>) via Overpass</td><td>OpenStreetMap contributors, ODbL</td></tr>
+    <tr><td><code>osm-pipelines</code></td><td>Submarine pipelines (<code>man_made=pipeline</code> with an offshore, seabed, underwater or sea location, or <code>submarine=yes</code>)</td><td>OpenStreetMap contributors, ODbL</td></tr>
+    <tr><td><code>sodir-wells</code>, <code>sodir-facilities</code></td><td>Norwegian wellbores and fixed facilities</td><td>Norwegian Offshore Directorate FactPages, Norwegian Licence for Open Government Data</td></tr>
+    <tr><td><code>bsee-platforms</code>, <code>bsee-wells</code>, <code>bsee-pipelines</code></td><td>Gulf of Mexico standing structures, boreholes and pipeline arcs; borehole statuses joined from the eWell raw data by API number</td><td>US BOEM / BSEE, public domain</td></tr>
+    <tr><td><code>ga</code></td><td>Australian offshore wells, platforms, facilities and pipelines from Geoscience Australia's ArcGIS services (Oil_Gas_Infrastructure, NOPIMS wells), filtered to 48&deg; S to 8&deg; S and 95&deg; E to 170&deg; E; water bores dropped</td><td>Geoscience Australia, CC BY 4.0</td></tr>
+    <tr><td><code>anp-wells</code>, <code>anp-fields</code></td><td>Brazil: the Tabela de Po&ccedil;os wells table (offshore rows only) and Campos de Produ&ccedil;&atilde;o field polygons as bounding-box centre markers</td><td>ANP (Ag&ecirc;ncia Nacional do Petr&oacute;leo, G&aacute;s Natural e Biocombust&iacute;veis) open data</td></tr>
+    <tr><td><code>uk-nsta</code></td><td>UK wells, infrastructure, fields and pipelines</td><td>North Sea Transition Authority open data, Open Government Licence v3</td></tr>
+    <tr><td><code>nl-nlog</code></td><td>Dutch continental shelf wells, facilities and pipelines</td><td>NLOG (TNO, Netherlands)</td></tr>
+    <tr><td><code>mx-cnh</code></td><td>Mexican wells and fields</td><td>CNH (Comisi&oacute;n Nacional de Hidrocarburos) open data</td></tr>
+    <tr><td><code>ca-boards</code></td><td>Canadian east coast wells</td><td>Canada-Newfoundland and Labrador Offshore Petroleum Board and Canada-Nova Scotia Offshore Petroleum Board open data</td></tr>
+    <tr><td><code>dk-dea</code></td><td>Danish North Sea wells</td><td>Danish Energy Agency / GEUS open data</td></tr>
+    <tr><td><code>nz-nzpam</code></td><td>New Zealand petroleum wells</td><td>New Zealand Petroleum and Minerals, CC BY 4.0</td></tr>
+    <tr><td><code>demo</code></td><td>Synthetic placeholder assets for layout previews, labelled as such</td><td>Not real installations; never part of a live deployment</td></tr>
+  </table>
+  </div>
+  <p>The international fetchers (<code>uk</code> to <code>nz</code>) were written against endpoints that could not be reached from the development environment; a source appears in the footer only if its fetch succeeded.</p>
+
+  <h2 id="definitions">3. Definitions and derivations</h2>
+
+  <p>Notation: <code>m</code> is a calendar month (January to December), <code>n<sub>m</sub></code> the number of valid 3-hourly samples the cell holds for that month over the whole record, <code>T</code> a wave height threshold in metres.</p>
+
+  <h3 id="grid">3.1 Grid and nearest cell</h3>
+  <ul>
+    <li>A click (or a typed position, read as WGS84) is matched to the nearest cell centre by great-circle distance (haversine, Earth radius 6371 km) among the cells in the tiles around the click. If the nearest cell is farther than the manifest's snap limit (350 km for ERA5, 150 km for WAVERYS) the tool says "No data cell within range of that point."</li>
+    <li>There is no interpolation between cells. Every displayed statistic is a value stored for one cell, which is what lets the verification tool trace a number to its source. The data point line states the cell centre, the grid spacing, the distance from your click in whole kilometres, the source, the period and the sample count.</li>
+    <li>The map's wave height shading is a separate 2 degree raster of sample-weighted mean Hs, drawn with bilinear smoothing for display only. It is never served as a statistic.</li>
+    <li>Currents (<a href="#currents">4</a>) and cyclone exposure (<a href="#cyclones">3.15</a>) have their own grids and snap limits, and the scatter table uses the 1 degree block containing the wave cell.</li>
+  </ul>
+
+  <h3 id="validity">3.2 Samples, ice and the validity mask</h3>
+  <ul>
+    <li>A sample is one 3-hourly model value with a finite Hs. Cells with no finite value in a month (land, and sea ice where the model reports none) contribute nothing.</li>
+    <li>A cell-month is <b>valid</b> when <code>n<sub>m</sub> &ge; 0.3 &times; max<sub>cells</sub>(n<sub>m</sub>)</code>, that is, when it holds at least 30 percent of the largest sample count any cell has for that calendar month. Cell-months below that (seasonal ice, partial coverage) are written as no data and every statistic for them reads "no data". The scatter tiles apply the same rule.</li>
+    <li>On ERA5 the wind statistics use the same rule on the wind sample count, which equals the wave count because wind is only accumulated at steps where the wave field is finite. On WAVERYS a grafted wind value additionally requires the ERA5 source cell to pass its own rule.</li>
+  </ul>
+
+  <h3 id="exceedance">3.3 Exceedance</h3>
+  <p>Each builder keeps, per cell and calendar month, a histogram of Hs in 0.25 m bins from 0 to 15 m: bin <code>k</code> holds samples with <code>0.25k &le; Hs &lt; 0.25k + 0.25</code>, and the top bin also takes everything from 15 m up. The thresholds are 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 8, 9 and 10 m, all bin edges, so the count at or above a threshold is exact:</p>
+  <pre class="f">E_m(T) = (number of samples in month m with Hs &ge; T) / n_m</pre>
+  <p>stored as a rounded whole-number permille and shown as a percentage. It is the probability that a 3-hourly sample is <b>at or above</b> T; the page wording says "exceeds". Percentages are printed to one decimal below 10 percent, as whole numbers above, and as "&lt;0.1%" below 0.05 percent.</p>
+  <p>The threshold table and the exceedance curve stop at 6 m unless your operational limit is higher; the data keeps all fifteen thresholds and the interpolation and extremes use them all.</p>
+
+  <h3 id="months">3.4 Combining months</h3>
+  <p>Selected months are combined by weighting each month's value by its length in days, <code>D = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]</code>, over the months that carry data:</p>
+  <pre class="f">E(T) = &Sigma;_m D_m &times; E_m(T) / &Sigma;_m D_m        (m over the selected valid months)</pre>
+  <p>The sample count printed on the data point line is the sum of <code>n<sub>m</sub></code> over those months. The same day weighting is used for the wave and wind roses, the peak period distribution, the wind mean and P90, the daily cycle and the background current statistics. Mean Hs (<a href="#meanhs">3.6</a>) is the one figure weighted by sample count instead.</p>
+
+  <h3 id="limit">3.5 Operational limit</h3>
+  <ul>
+    <li>The headline percentage for a limit <code>L</code> (accepted range 0.25 to 15 m) is read off the combined exceedance by straight-line interpolation between the points <code>(0 m, 100%)</code>, <code>(T<sub>1</sub>, E(T<sub>1</sub>))</code>, ... <code>(T<sub>15</sub>, E(T<sub>15</sub>))</code>. At the last threshold its own value is used; beyond it the last value is used and printed with a "&lt;" prefix.</li>
+    <li>"That is roughly D days per month on average" is <code>D = E(L) &times; 0.3044</code>, that is <code>E(L)/100 &times; 30.44 days</code>, printed to one decimal below 3 days.</li>
+    <li>The bars "Time above L m, by month" apply the same interpolation to each month's own exceedance; masked months are left blank.</li>
+    <li>The weather window threshold picker defaults to the available threshold nearest your limit.</li>
+  </ul>
+
+  <h3 id="meanhs">3.6 Mean Hs</h3>
+  <p>Per cell and month, <code>mean<sub>m</sub> = &Sigma; Hs / n<sub>m</sub></code>, stored to 0.1 m. The prevailing conditions line combines the selected months by sample count: <code>&Sigma;<sub>m</sub> mean<sub>m</sub> &times; n<sub>m</sub> / &Sigma;<sub>m</sub> n<sub>m</sub></code>, printed to 0.1 m. The map shading raster is a sample-weighted mean over 2 degree blocks.</p>
+
+  <h3 id="tp">3.7 Peak period</h3>
+  <ul>
+    <li>Peak period is ERA5 <code>pp1d</code> or WAVERYS <code>VTPK</code>, binned in one-second bins: bin <code>b = clip(int(Tp) - 2, 0, nb - 1)</code>, so bin <code>b</code> holds <code>b + 2 &le; Tp &lt; b + 3</code> seconds, bin 0 also takes anything under 2 s, and the top bin takes everything from its lower edge up. ERA5 has 14 bins (top bin 15 s and longer), WAVERYS 24 (top bin 25 s and longer). Only samples with a finite peak period are counted, so the histogram's own total is its denominator.</li>
+    <li>The chart "Peak period, % of time in each band" is the day-weighted combination of the monthly histograms over the selected months, renormalised to 100 percent. The tallest band is the mode, and the sentence reads "most often [X]-[X+1] s ([N]% of the time)", or "[X] s and longer" for the top bin. Several humps mean several seas (local wind sea and longer swell); the figure is the dominant period over time, not a spectral split of one moment.</li>
+    <li>Each tile also carries a monthly "typical" peak period: the centre of the bin in which the cumulative count first reaches half the total, <code>b + 2.5</code> seconds. The prevailing conditions line's "typical peak period" is the day-weighted mean of those monthly values, and tile sets built before the histogram existed fall back to a chart of them.</li>
+  </ul>
+
+  <h3 id="direction">3.8 Wave and wind direction</h3>
+  <ul>
+    <li>Wave direction is ERA5 mean wave direction <code>mwd</code> or WAVERYS <code>VMDR</code>: the direction waves come <b>from</b>, in degrees clockwise from north. Wind direction is the direction the wind blows from, computed as the bearing of <code>(-u10, -v10)</code>: <code>atan2(-u10, -v10)</code> in degrees, modulo 360.</li>
+    <li>Both are counted in twelve 30 degree sectors, <code>k = floor(direction / 30) mod 12</code>, so sector <code>k</code> covers <code>[30k, 30k + 30)</code> degrees: sector 0 is 0 to 30 (from the north to north-east), sector 9 is 270 to 300.</li>
+    <li>Each rose is the percentage of the month's samples arriving from each sector (rounded to whole percent). The builders accumulate the wave rose in four Hs bands (below 1.5, 1.5 to 2.5, 2.5 to 4, 4 m and above) and the wind rose in four speed bands (below 5.5, 5.5 to 10.8, 10.8 to 17.2, 17.2 m/s and above); the tiles and the drawn roses sum the bands, so the roses show direction only.</li>
+    <li>The page combines the selected months day-weighted, renormalises to 100 percent, and names the modal sector by its centre, <code>30k + 15</code> degrees, on the 16-point compass (nearest 22.5 degree point). The wording is "waves most often from the [compass point] (about [N]% of the time)"; the arrow beside it points the way the waves travel. Petals are drawn centred on the sector centre, on the page and in the PDF.</li>
+  </ul>
+
+  <h3 id="wind">3.9 Wind speed</h3>
+  <ul>
+    <li>Speed is the magnitude of the ERA5 10 m wind, <code>sqrt(u10&sup2; + v10&sup2;)</code>, at each 3-hourly step where the wave field is finite, in a histogram of forty 1 m/s bins, the top bin taking everything from 39 m/s up.</li>
+    <li>Monthly mean is the plain average, stored to 0.1 m/s. Monthly <b>P90</b> is the upper edge of the 1 m/s bin in which the cumulative count first reaches <code>ceil(0.9 &times; n)</code>, so it is a whole number of m/s.</li>
+    <li>The wind line combines the selected months day-weighted and reads "typically [mean] m/s ([kn] kn), top 10% above [P90] m/s ([kn] kn), most often from the [compass point] ([N]%)"; knots are m/s times 1.94384.</li>
+    <li>On WAVERYS tiles the wind is the nearest ERA5 cell's (<a href="#waves">2.1</a>). Where a tile set carries no wind the line and the wind rose are simply not shown.</li>
+  </ul>
+
+  <h3 id="extremes">3.10 Extremes</h3>
+  <ul>
+    <li>Per cell and month, <b>P99</b> and <b>P99.9</b> are read from the 0.25 m histogram: the first bin <code>b</code> whose cumulative count reaches <code>ceil(q &times; n<sub>m</sub>)</code> for <code>q = 0.99</code> and <code>0.999</code>, reported as that bin's upper edge, <code>(b + 1) &times; 0.25</code> m, rounded to 0.1 m.</li>
+    <li>The <b>pooled annual</b> pair is the same rule on the histogram summed over all twelve months, so every sample of the record counts once and months are not weighted. This is what "1 sea state in 100 here is above X m and 1 in 1000 above Y m (3 hour samples, all year)" reports, independent of the months selected.</li>
+    <li>"Statistically the roughest month is M, when the top 1% of seas reach X m" names the calendar month with the highest monthly P99 among all twelve, again independent of the selection.</li>
+    <li>These are percentiles of 3-hourly samples. They are not return values, and the tool fits no distribution to the tail.</li>
+  </ul>
+
+  <h3 id="windows">3.11 Weather windows</h3>
+  <ul>
+    <li>Thresholds: 1.0, 1.5, 2.0, 2.5 and 3.0 m. A <b>calm spell</b> at threshold <code>T</code> is a run of consecutive 3-hourly samples with <code>Hs &lt; T</code> (strictly below). Its duration is 3 hours times the number of samples.</li>
+    <li>A spell is counted once, when it ends (at the first sample at or above <code>T</code>), and is attributed to the calendar month in which it <b>started</b>. Run state carries across month boundaries.</li>
+    <li>Duration bins have edges 6, 12, 24, 48, 72 and 120 hours; a spell lands in the bin whose lower edge is the largest edge not greater than its duration, so the bins are under 6 h, 6 to under 12, 12 to under 24, 24 to under 48, 48 to under 72, 72 to under 120, and 120 h and over. A 6.0 h spell counts as "6 h or more".</li>
+    <li>A spell that reaches 80 samples (240 hours, 10 days) is counted once in the top bin and its counter reset; if the calm continues, a new spell starts in the current month. A persistently calm cell therefore shows about three spells a month by construction.</li>
+    <li>Tiles carry spells <b>per year</b>, per month, threshold and bin: the count divided by (months in the record / 12), stored to 0.1.</li>
+    <li>On the page, "lasting at least D h" sums the bins from the one starting at D upward, per calendar month; the summary sums the selected months. The sentence reads "a typical year gives about N spells of D h or more below T m. The sea is below T m about X% of the time in these months. A calm running past 240 h is counted once per 240 h." where X is 100 minus the interpolated exceedance at T (<a href="#limit">3.5</a>), and "nearly all of the time" replaces the percentage at 99.5 percent and above. The count and the share are printed together so that a site which is calm most of the time reads as calm rather than as a large number of spells.</li>
+    <li>Defaults: the threshold nearest your operational limit and 24 hours. When two separately built spans are merged, the one spell open at the seam is counted as two shorter spells (one per cell per threshold at most).</li>
+  </ul>
+
+  <h3 id="diurnal">3.12 Across the day</h3>
+  <ul>
+    <li>Each 3-hourly step is filed into a 3 hour slot of the <b>local solar day</b> by longitude: <code>slot = floor((UTC hour + longitude / 15 + 1.5) / 3) mod 8</code>. Slot <code>s</code> therefore covers local solar times from <code>3s - 1.5</code> to <code>3s + 1.5</code> hours and is labelled by its centre: 00:00, 03:00, ... 21:00. Solar noon is 12:00 by definition; clock time and daylight saving are not applied.</li>
+    <li>Per cell, month and slot the builders store the mean Hs (to 0.1 m) and, on ERA5, the mean 10 m wind (to 0.1 m/s). On WAVERYS the wind half is grafted from ERA5.</li>
+    <li>The page combines the selected months day-weighted, then names the calmest and roughest slot of the reference series (Hs when present, otherwise wind). When the spread between them is less than 6 percent of the slot mean, <code>(max - min) / mean &lt; 0.06</code>, the line says there is no meaningful daily cycle, which is the usual answer in the open ocean.</li>
+    <li>Night shading and the daylight line use solar geometry only: declination <code>&delta; = -23.44&deg; &times; cos(2&pi;/365 &times; (N + 10))</code> with <code>N</code> the day of year at mid-month, day length <code>2 &times; H / 15</code> hours with <code>H = acos(-tan(lat) &times; tan(&delta;))</code> in degrees, sunrise and sunset symmetric about 12:00 local solar time, and polar day or night when the cosine argument leaves the range -1 to 1.</li>
+  </ul>
+
+  <h3 id="scatter">3.13 Hs against peak period</h3>
+  <ul>
+    <li>Source: the ERA5 joint table, counted per cell and month over samples with a finite peak period. Hs bin <code>k = min(floor(Hs / 0.5), 13)</code> holds <code>0.5k &le; Hs &lt; 0.5k + 0.5</code> m for <code>k = 0</code> to 12, and bin 13 holds 6.5 m and above. Tp bins are the 14 one-second bins of <a href="#tp">3.7</a> (bin 0 also under 2 s, bin 13 15 s and longer).</li>
+    <li>Emitted per <b>1.0 degree block</b>: the sum of the valid 0.5 degree cells in each 2 by 2 block, with block centres at <code>-89.25 + i</code> degrees latitude and <code>-179.75 + j</code> degrees longitude (the south pole row is dropped). Masked cell-months contribute nothing. The page takes the block containing the wave cell.</li>
+    <li>The table sums the selected months and shows each cell as <b>parts per thousand</b> of the total (values under 1 as "&lt;1", zero as a dot), with row and column totals. The note states the total sample count, the joint set's own source label and period, and that the table is "aggregated over a 1.0&deg; cell around the data point".</li>
+  </ul>
+
+  <h3 id="enso">3.14 ENSO phase</h3>
+  <p>The El Ni&ntilde;o and La Ni&ntilde;a panel is switched off on the explorer (<code>SHOW_ENSO = false</code>); the data keeps being built. The rule, for the record: each calendar month is tagged from the single ONI season centred on it (DJF for January through NDJ for December) by <code>anomaly &ge; +0.5 &deg;C</code> = El Ni&ntilde;o, <code>&le; -0.5 &deg;C</code> = La Ni&ntilde;a, else neutral, with no persistence requirement. A whole month sits in one phase. Tiles carry per-phase sample counts, mean Hs and exceedance at every threshold; cyclone tiles carry per-phase storm counts and storm-days with per-phase-year denominators. On WAVERYS the phase fields are ERA5 statistics grafted from the nearest 0.5 degree cell.</p>
+
+  <h3 id="cyclones">3.15 Tropical cyclone exposure</h3>
+  <ul>
+    <li><b>Storms counted:</b> IBTrACS fixes at tropical-storm strength and above (wind &ge; 34 kt), taken in runs of consecutive qualifying fixes no more than 6 hours apart with at least two fixes. Each run is interpolated to hourly positions (straight lines in latitude and unwrapped longitude) and hourly wind.</li>
+    <li><b>Rings:</b> 120, 250, 500 and 1,000 nautical miles (times 1.852 km) around the centres of 1 degree cells (89.5&deg; S to 89.5&deg; N, 179.5&deg; W to 179.5&deg; E). Distance is equirectangular with the cosine of the mean latitude, which the builder notes is within 2 percent of great circle at these radii. The explorer uses the nearest cyclone cell within 170 km; no cell within that distance means no recorded exposure, and the panel stays hidden.</li>
+    <li><b>Per cell, month and ring:</b> storm-hours inside the ring (storm-days = hours / 24), <b>storm-months</b> (a storm counts once per calendar month in which it is inside the ring), the number of distinct storms inside the ring over the whole year, and the maximum best-track wind on record inside the ring.</li>
+    <li><b>Per season:</b> the monthly figures are divided by the number of years in the record, less one for calendar months after the final year's last data month, so an incomplete final year does not dilute those months. Storms are stored to 0.01 per season and storm-days to 0.1.</li>
+    <li><b>On the page:</b> the selected months are summed. Because a storm straddling a month boundary is counted in each month, the sentence says "N storm-months inside R nm during these months (D storm-days; a storm spanning two months counts in each)". With all twelve months selected the distinct-storm count is used and the wording becomes "N storms".</li>
+    <li><b>Category:</b> from the maximum wind inside the chosen ring: under 64 kt "tropical storm strength"; from 64 kt Category 1; from 83 kt Category 2; from 96 kt Category 3; from 113 kt Category 4; from 137 kt Category 5.</li>
+    <li>Poleward of 35 degrees latitude the note says the storms are mostly post-tropical by the time they arrive and their seas are already inside the wave statistics; elsewhere it notes that operations commonly begin securing and demobilising with a cyclone inside 1,000 nm, so this downtime is additional to the wave statistics.</li>
+    <li><b>Track layer:</b> the same qualifying runs drawn as polylines at 0.01 degree precision. The default filter keeps storms whose nearest track point is within the ring chosen in the panel (equirectangular distance in nautical miles), a year band narrows further, and "severe only" keeps storms with a peak wind of 96 kt or more (Category 3 and above). Tracks carry a season year and a peak wind, not a month, so no month filter is offered.</li>
+  </ul>
+
+  <h3 id="depth">3.16 Water depth</h3>
+  <ul>
+    <li>With the ETOPO tiles deployed, the line reads "about N m (ETOPO 2022)": the 0.1 degree cell containing the data point (<code>row = floor((lat - lat0) / 0.1)</code>, likewise for longitude), depth = minus the stored elevation when that is negative; a non-negative elevation (land) gives no reading.</li>
+    <li>Otherwise the Natural Earth bands: the deepest of the 200, 1,000, 2,000 and 3,000 m polygons that contains the point (even-odd ray test) gives "under 200 m", "roughly 200 m to 1,000 m", and so on, or "deeper than 3,000 m".</li>
+    <li>Depth contours: Natural Earth 200, 1,000 and 3,000 m lines in the world view; when zoomed in, contours are drawn from the ETOPO tiles by marching squares at a level set chosen from the depth at the selected point (for example 10 to 50 m steps on a shallow shelf, 500 to 6,000 m in the deep ocean). ETOPO depths are referenced to mean sea level.</li>
+  </ul>
+
+  <h2 id="currents">4. Currents and tides</h2>
+
+  <h3 id="harmonic">4.1 Harmonic analysis of the tidal stream</h3>
+  <ul>
+    <li>For every cell of the native 1/12 degree grid, the hourly barotropic tidal velocity components over the 90 day window are fitted by least squares to a constant plus six constituents:
+      <pre class="f">u(t) = a0 + &Sigma;_i [ A_i cos(&omega;_i t) + B_i sin(&omega;_i t) ]      (and likewise v(t))
+
+constituent speeds, degrees per hour:
+  M2 28.9841042   S2 30.0000000   N2 28.4397295
+  K1 15.0410686   O1 13.9430356   M4 57.9682084</pre>
+      with <code>t</code> in hours from the window start. K2 and P1 cannot be separated from S2 and K1 in 90 days and fold into them. A cell is used only if at least 98 percent of its hours are finite.</li>
+    <li><b>Nodal correction.</b> A time-stepping tide model carries the 18.61 year nodal modulation, so a 90 day fit measures <code>f &times; amplitude</code>. The fitted coefficients are divided by the Schureman nodal factors evaluated at the window midpoint, with <code>N</code> the longitude of the lunar ascending node in degrees, <code>N = (125.0445479 - 0.0529539222 &times; days since 2000-01-01 12:00) mod 360</code>:
+      <pre class="f">f_M2 = 1.0004 - 0.0373 cos N + 0.0002 cos 2N
+f_K1 = 1.0060 + 0.1150 cos N - 0.0088 cos 2N + 0.0006 cos 3N
+f_O1 = 1.0089 + 0.1871 cos N - 0.0147 cos 2N + 0.0014 cos 3N
+f_S2 = 1     f_N2 = f_M2     f_M4 = f_M2&sup2;</pre>
+      The node angle used is recorded in the currents manifest as <code>nodal_node_deg</code>. The attribution sentence in the explorer footer states whether the deployed tiles were built with or without this correction (an earlier build of the tiles predates it).</li>
+    <li><b>Amplitude and axis.</b> Each constituent's amplitude is the largest speed over one cycle of its current ellipse (sampled at 60 points). The bearing of the M2 major axis is the direction, <code>atan2(u, v)</code>, at that maximum, folded into 0 to 179 degrees.</li>
+  </ul>
+
+  <h3 id="springneap">4.2 Springs and neaps</h3>
+  <p>The constituents other than N2 and the constant term are reconstructed over 35 days at 10 minute steps (a full spring-neap cycle at mean tide). The peak speed of each day is taken; <b>spring</b> is the largest daily peak and <b>neap</b> the smallest. Both are depth-averaged (barotropic) rates, stored to 0.01 m/s. N2 is left out by the usual mean-springs convention and the constant term is not a tidal peak.</p>
+
+  <h3 id="form">4.3 Form factor and cadence</h3>
+  <p><code>F = (K1 + O1) / (M2 + S2)</code> from the constituent amplitudes (99 where the semidiurnal sum is under 0.0001 m/s; stored capped at 99). The panel reads it as: <code>F &lt; 0.25</code> "semidiurnal: it peaks roughly every 6.2 hours"; <code>0.25 &le; F &le; 1.5</code> "mixed, mainly semidiurnal: peaks roughly every 6 hours, alternating stronger and weaker"; <code>1.5 &lt; F &le; 3</code> "mixed, mainly diurnal: one strong and one weak peak most days"; <code>F &gt; 3</code> "diurnal: it peaks roughly every 12.4 hours".</p>
+
+  <h3 id="slack">4.4 Slack water</h3>
+  <ul>
+    <li>From the full reconstruction (all six constituents plus the constant), the builder finds runs of 10 minute steps with speed below 0.25 m/s and below 0.5 m/s.</li>
+    <li>Only <b>turn-bounded</b> runs count: a run must start and end inside the 35 day window, and must be no longer than 40 steps (6.7 hours), or 80 steps (13.3 hours) where <code>F &gt; 1.5</code>. A run longer than half a cycle is a neap lull, not a turn of the tide.</li>
+    <li>The stored slack duration is the mean length in minutes of the qualifying runs. Two special values: <b>0</b> when the speed never falls below the threshold at all (a rotary stream that never stops), and a cap of <b>999</b> when the speed does fall below the threshold but no run qualifies (not resolved; the page shows nothing for it).</li>
+    <li>Slack periods per day is the number of qualifying runs below 0.25 m/s divided by the number of days that had at least one, stored to 0.1.</li>
+    <li>The panel's sentences are gated on the surface-scaled speeds (<a href="#profile">4.5</a>): with a spring surface stream above 0.5 m/s, a stored 0 gives "The stream rotates rather than stopping: there is no true slack window at the turn of the tide"; a resolved duration with the neap surface stream also above 0.5 m/s gives "Around each turn of the tide the stream stays below 0.5 m/s (1 kn) for about N min (below 0.25 m/s for about M min)"; a neap surface stream at or below 0.5 m/s gives "At neaps the stream stays below 0.5 m/s (1 kn) for long spells; slack windows around springs are short". With a spring surface stream at or below 0.5 m/s the line says the stream rarely exceeds 0.5 m/s. "Expect about N slack periods per day" appears when there is at least one per day and the spring rate exceeds 0.25 m/s.</li>
+    <li>Slack durations refer to the depth-averaged stream, not to the surface-scaled figures.</li>
+  </ul>
+
+  <h3 id="profile">4.5 The 1/7 power profile for the tidal stream</h3>
+  <p>The source statistic is the depth mean. People work at the surface or at the bed, so both are shown through a power-law profile with exponent 1/7 at the site's ETOPO depth <code>d</code>:</p>
+  <pre class="f">surface        = 8/7 &times; depth mean        (a 1/7 profile averages to 7/8 of its surface value)
+bottom metre   = surface &times; (1 / d)^(1/7)</pre>
+  <p>applied to both the spring and the neap rate. The lines read "Tidal stream at the surface: typical peak about X m/s (N kn) at springs, Y m/s at neaps" and "Near the seabed (bottom metre, at ~d m depth): about ...". With no depth available the seabed line falls back to "Near the seabed expect roughly two thirds of the surface stream". The figure note on the explorer states the assumption and that measured profiles vary.</p>
+
+  <h3 id="background">4.6 Background current statistics</h3>
+  <ul>
+    <li>Speed <code>sqrt(uo&sup2; + vo&sup2;)</code> of the GLORYS12 daily means is accumulated per calendar month in 0.025 m/s bins up to 2 m/s, for the surface level (0.494 m) and for the <b>deepest of the six levels that is wet</b> at that cell (the near-seabed proxy; its depth is stored per cell).</li>
+    <li><b>P50</b> is the first bin whose cumulative count reaches half the total, <b>P90</b> the first whose cumulative count reaches <code>ceil(0.9 &times; total)</code>; both are reported at the bin centre, <code>(b + 0.5) &times; 0.025</code> m/s.</li>
+    <li>The page combines the selected months day-weighted and reads "Background (non tidal) current: typically P50 at the surface, top decile P90; at N m depth (deepest modelled level; the bed is at ~D m) typically ..." when the ETOPO depth is more than 1.25 times the level depth, and "near the seabed (model level ~N m)" otherwise. Below 644 m of water the deepest level is 643.566 m and sits above the bed.</li>
+  </ul>
+
+  <h3 id="dnv">4.7 The combined profile table (DNVGL-RP-C205)</h3>
+  <p>The table "Through the water column" combines three components the way DNVGL-RP-C205, <i>Environmental conditions and environmental loads</i>, edition August 2017, describes in its section 4.1.4, Design current profiles. The clause numbers below were checked against that edition's text; only the definitions the text states are repeated here.</p>
+  <ul>
+    <li><b>4.1.3.3</b> takes the total current velocity at a location as the vector sum of each current component present: wind generated, tidal and circulational currents. The tool has no direction for the wind and residual components at each depth, so it adds the three <b>magnitudes as if aligned</b>, which is the conservative reading of the vector sum.</li>
+    <li><b>4.1.4.1</b> models the variation of tidal current velocity with depth in shallow water, when detailed field measurements are not available, as a simple power law assuming uni-directional current. Implemented at every depth as
+      <pre class="f">v_tide(z) = v_tide(0) &times; ((d - z) / d)^(1/7)</pre>
+      with <code>z</code> the depth below the still water level (positive downwards here; the standard's own definition list takes z positive upwards), <code>d</code> the water depth, and <code>v_tide(0) = 8/7 &times;</code> the spring depth-mean stream (<a href="#profile">4.5</a>). The exponent is the "typically 1/7" of 4.1.4.3.</li>
+    <li><b>4.1.4.2</b> allows the wind generated current to be taken as either a linear profile from <code>z = -d0</code> to the still water level, or a slab profile, with the note that the profile giving the highest loads for the application should be applied. The tool uses the linear profile.</li>
+    <li><b>4.1.4.3</b> gives the combined expression in which the wind generated current vanishes at a distance <code>d0</code> below the still water level, and defines <code>d0 = 50 m</code> and the exponent <code>&alpha;</code>, typically 1/7. Implemented as
+      <pre class="f">v_wind(z) = v_wind(0) &times; max(0, 1 - z / 50)</pre></li>
+    <li><b>4.1.4.4</b> states that in deep water along an open coastline, if statistical data are not available, the wind generated current at the still water level may be taken as <code>v_c,wind(0) = k &times; U_1hour,10m</code> with <code>k = 0.015 to 0.03</code>, <code>U</code> being the 1 hour sustained wind speed at 10 m. The tool uses <code>k = 0.03</code>, the top of that range, and takes the site's <b>P90 10 m wind</b> over the selected months (<a href="#wind">3.9</a>) as the 1 hour wind; the builders' 3 hourly reanalysis values sit close to hourly means. The clause is written for deep water along an open coastline; the tool applies it wherever a wind statistic exists, as a screening figure.</li>
+    <li><b>Circulation term:</b> the GLORYS residual P90 (<a href="#background">4.6</a>): the surface value at <code>z = 0</code>, the deepest modelled level's value at its own depth, linear between the two, and held constant below. With no deeper level the surface value is held through the column.</li>
+    <li><b>Rows:</b> the surface, then 5, 10, 25, 50, 100 and 200 m where each is shallower than <code>d - 1</code>, then "1 m above bed" at <code>z = d - 1</code>. With no site depth only the surface row is shown and the tidal column is surface-only.</li>
+    <li><b>Note under the table.</b> The modelled surface residual already contains the wind drift GLORYS resolves, so adding the 4.1.4.4 term is conservative near the surface. The note also quotes what the wind term would be at a 20 m/s design wind: <code>0.03 &times; 20 = 0.60 m/s</code>, citing DNV-ST-N001 11.12.2.3. DNV-ST-N001 is not held with this site's code; the 20 m/s figure and that clause number are the values used in Thrust Maritime's own calculation practice and are not checked against the standard's text. The table closes with "Climatological figures, not extreme-value design values."</li>
+  </ul>
+  <p>The same section of the standard, in 4.1.4.5 to 4.1.4.8, says that the variation of current over depth depends on the local oceanographic climate, the vertical density distribution and the flow into or out of the area, may vary from season to season, that deep water profiles may be complex with current direction changing 180 degrees with depth, that long term measured profiles can be parametrised with empirical orthogonal functions, and that conditions close to the sea bed are the subject of DNVGL-RP-F105. The tool does none of that; its column is a screening picture from climatological statistics.</p>
+
+  <h2 id="assets">5. Assets layer</h2>
+
+  <h3>What is shown</h3>
+  <ul>
+    <li>Platforms as diamonds, fields as circles, LNG terminals as squares, wells as small dots that appear once zoomed in, and pipelines as orange lines that appear past a zoom threshold. Hovering shows name, type, status, country or area and, where the register has them, water depth, year (installed or spudded) and operator.</li>
+    <li>The results context line names the <b>nearest mapped asset</b> to the data point within 400 km, from the full set regardless of filters, with its type, water depth and distance in whole kilometres.</li>
+    <li>Positions are indicative, for situational awareness only, never for navigation. The explorer's disclaimer says so.</li>
+  </ul>
+
+  <h3>How registers are merged</h3>
+  <ul>
+    <li>Sources are read in the order given at build time; when the build starts from existing files, the first file's records win. Every source's attribution sentence rides inside <code>assets.json</code>.</li>
+    <li><b>Datums.</b> Sodir FactPages coordinates are ED50 (EPSG:4230) and BSEE Gulf of Mexico data NAD27 (EPSG:4267). When the pyproj library is present at build time these sources are transformed to WGS84 before dedupe and the source is flagged so a later merge never shifts it twice; without pyproj the offsets remain (about 150 m for ED50, 10 to 35 m for NAD27). Everything else is consumed as WGS84.</li>
+    <li><b>Wells</b> are deduplicated on a grid of about 2 km: the key is <code>(round(lat &times; 50), round(lon &times; 50))</code>. The first well in a cell is kept; later ones in the same cell are collapsed into it and donate any water depth, year, operator or status the survivor lacks. Multi-wellbore pads and a registry's per-phase duplicate rows collapse to one marker by design.</li>
+    <li><b>Platforms</b> use the same 2 km cells. Where OpenStreetMap and a regulator both hold a platform in one cell, the regulator's record replaces the OSM one and inherits its name if the regulator's is a placeholder; otherwise the first record stays and later ones donate missing fields.</li>
+    <li>Fields and LNG terminals are not grid-deduplicated (LNG units collapse to one site per terminal name and position at ingest, keeping the best status).</li>
+    <li><b>Water depth</b> comes from the register where it has one (BSEE feet converted to metres); otherwise it is stamped from the ETOPO tiles (about 11 km resolution, indicative). With the landlocked cull enabled, a well with no register depth whose 3 by 3 ETOPO neighbourhood is entirely land is dropped: registers mix onshore rows into offshore layers.</li>
+  </ul>
+
+  <h3>Pipelines: the offshore cut and three-level dedupe</h3>
+  <ul>
+    <li>Every line source can be cut to its offshore runs. The sea test is an even-odd point-in-polygon check against the site's own Natural Earth 1:50m land rings (water is what the land rings leave out, so the Caspian counts as water). A run is a maximal stretch of points at sea, extended by one dry point at each end so the line meets the shore. Runs shorter than 3 km are dropped, but only on lines the cut actually touched; a short riser tie-in that is wholly at sea stays. The Global Energy Monitor trackers, being mostly onshore, get the 3 km floor on every line. OSM pipelines whose substance is water, sewage, heat, CO2, hydrogen, ammonia and similar are dropped. GEM rows never built (proposed, cancelled, shelved) are dropped; operating, under construction, idle, mothballed and retired lines stay.</li>
+    <li><b>Level 1:</b> byte-identical geometry within one source is one feature ingested twice and is removed.</li>
+    <li><b>Level 2, across sources:</b> sources rank 0 (Geoscience Australia, BSEE/BOEM, Sodir), 1 (the GEM trackers), 2 (OpenStreetMap and anything else). A line is dropped when a strictly higher-ranked line from a different source runs within 2.0 km of at least 80 percent of its points. Never within one source, so genuinely parallel trunklines in one register both survive.</li>
+    <li><b>Level 3, within one source:</b> lines with a generic name ("" or "Pipeline") that share a corridor collapse to one, because at the map's deepest zoom a few hundred metres is one pixel and a generic name carries nothing to preserve. The corridor tolerance is 0.5 km covering 90 percent of points; when one line carries a status and the other does not, the pair is treated as Geoscience Australia's two overlapping layers of the same pipeline and gets the cross-source tolerance of 2.0 km and 80 percent instead. Only lines whose status and operator agree, or are blank, may merge; the attributed and then the longest line is kept, and it inherits the other's status and operator. Named lines never collapse this way: two lines both called TurkStream are two strings.</li>
+    <li>Lines are Douglas-Peucker simplified at 0.005 degrees with a cap of 150,000 points per source, and stored delta-encoded at 0.0001 degree.</li>
+  </ul>
+
+  <h3>The in-service filter</h3>
+  <p>"In service only" is on by default and applies to wells only. A well is hidden when its status matches <code>abandon, plug, p&amp;a, paa, junk, dry, cancel, wildcat, apprais, explor, soil, stratigraphic</code>; otherwise it is shown when the status matches <code>produc, inject, develop, operat, online, in service, active, completed, suspend, shut, drill</code>. A well with no usable status is hidden by this filter; untick it to see everything. The other filters are type, a water depth range (assets with no known depth are hidden while a range is set) and free text over status, operator and name; a count states how many assets match.</p>
+
+  <h3>Names</h3>
+  <p>Names are missing from some registers. Records without one carry a placeholder ("Unnamed platform", "Unnamed well", "Unnamed unit"), and the pipelines from Geoscience Australia and BSEE currently carry "Pipeline" for every line because those grabs did not map the name field. GOGET names are trimmed of their bracketed country and "Oil and Gas Field" suffix so the hover shows type and country separately.</p>
+
+  <h2 id="limitations">6. Limitations and known gaps</h2>
+  <ul>
+    <li><b>Reanalysis, not measurement.</b> ERA5 at 0.5 degrees and WAVERYS at 0.2 degrees are unreliable close to coastlines and in sheltered, shallow or enclosed water, underestimate tropical cyclone seas, and bias extremes low. The nearest-cell snap can be up to about 39 km on the 0.5 degree grid and about 16 km on the 0.2 degree grid; the data point line always states the actual distance.</li>
+    <li><b>3-hourly sampling.</b> Every percentile and every spell length is a statistic of 3-hourly values. Short events between samples are not seen, and spell durations are multiples of 3 hours.</li>
+    <li><b>Threshold interpolation.</b> The exceedance at your own limit is a straight line between tabulated thresholds, so between thresholds it is an approximation.</li>
+    <li><b>Wave direction</b> is the mean wave direction, not the peak direction, and the roses show direction only; the height and speed bands exist in the checkpoints but are not served.</li>
+    <li><b>Wind on WAVERYS tiles</b> is the nearest 0.5 degree ERA5 cell's, and the wind span can differ from the wave period; the attribution line states both. When a tile set was emitted without the wind graft, the wind line, wind rose and wind half of the daily cycle are absent rather than wrong.</li>
+    <li><b>Weather windows</b> count spells, not sliding windows: a 30 hour calm counts once for "24 h or more". The 240 hour cut manufactures counts at persistently calm sites, which is why the share of calm time is printed alongside. A merged record splits one spell per cell and threshold at the seam.</li>
+    <li><b>Scatter tables</b> are 1.0 degree aggregates of the ERA5 grid and can carry a different period from the wave backbone; the note under the table is the authority.</li>
+    <li><b>ENSO</b> conditioning is built but not displayed.</li>
+    <li><b>Tidal stream</b> is a six-constituent fit to 90 days of a global barotropic model: K2 and P1 fold into S2 and K1, the fit window is stated in the manifest, and the depth mean is turned into surface and bed figures by an assumed 1/7 profile. Real profiles vary, streams in open water can be rotary rather than reversing, and where the neap peak sits below the threshold the slack figure cannot resolve a turn of the tide (stored as not resolved). The tidal grid is the model's 1/12 degree and knows nothing about local bathymetry finer than that.</li>
+    <li><b>Background currents</b> are 1/4 degree monthly percentiles of daily means from a model that excludes tides, at six fixed levels; the "near-seabed" level is the deepest wet level, which above 644 m of water can be well above the bed and beyond 644 m always is. The GLORYS period is stated in the manifest, and tiles built from the analysis-forecast tidal product and the reanalysis background come from different systems.</li>
+    <li><b>The DNVGL-RP-C205 profile table</b> is a screening combination: the components are added as magnitudes, the 4.1.4.1 power law is stated for shallow water and is applied here at every depth, the wind term uses a climatological P90 rather than a design wind, the 4.1.4.4 coefficient is meant for deep water along an open coastline when statistics are not available, and the standard itself (4.1.4.5 to 4.1.4.8) warns that real profiles depend on local climate and density structure, can reverse with depth, should be derived from measured profiles where those exist, and that near-bed conditions are treated separately in DNVGL-RP-F105. The DNV-ST-N001 clause quoted in the note is not checked against that standard's text.</li>
+    <li><b>Cyclones</b> are best-track positions interpolated to the hour, with distances within about 2 percent of great circle; a storm near a ring edge between fixes can be missed or over-counted at the margin. Poleward of about 35 degrees the counted storms are mostly post-tropical remnants. Intensity comes from 1-minute USA winds where available and from the responsible agency's own averaging (often 10-minute) elsewhere, so categories are not perfectly uniform between basins. The final, incomplete year is handled month by month but the record still ends when the source file does.</li>
+    <li><b>Water depth</b> from ETOPO is a 0.1 degree block mean (about 11 km) referenced to mean sea level; the Natural Earth bands are coarse and can be a band off on steep slopes.</li>
+    <li><b>Assets</b> are indicative positions from registers of varying quality: names and statuses are missing from some, Geoscience Australia and BSEE pipelines are unnamed, platform collisions between two regulators are not resolved, Sodir onshore facilities are present, and international registers appear only where their fetch succeeded. Positions carry the source datum offsets unless the transform ran at build time. Nothing here is fit for navigation.</li>
+    <li><b>Demonstration mode.</b> Without a deployed dataset the explorer runs on a clearly labelled synthetic climatology (amber banner, watermark on the PDF). Nothing on this page applies to those numbers.</li>
+  </ul>
+
+  <h2 id="cite">7. Citing, sharing, and asking for a study</h2>
+
+  <h3>How to cite</h3>
+  <p>The explorer's terms line reads: <span class="quote">"Free to use for individual planning reference, and free to cite: Thrust Maritime, Sea State Explorer, the location and the date you read it, with a link to the result. Automated bulk extraction of the tool's data tiles is not permitted; the underlying open datasets are available from the original providers credited below, and the methodology page states every source and derivation."</span></p>
+  <p>A citation therefore carries four things: the publisher, the tool, the location as shown on the page, and the date, plus the link to the result. For example:</p>
+  <pre class="f">Thrust Maritime, Sea State Explorer, [location as shown on the page], read [date],
+[link copied with "Copy link to this result"]</pre>
+  <p>If the underlying dataset matters to your reader, add the source and period from the data point line (for example "ERA5 reanalysis (ECMWF / Copernicus C3S), 2010-2024, 3 hourly") and the provider's own attribution sentence from <a href="#licences">section 8</a>. The PDF summary carries the same link under "Interactive version of this page" and lists every source in its Sources section.</p>
+
+  <h3>Sharing a location</h3>
+  <p>Every result has a URL that reproduces it. "Copy link to this result" writes the state into the URL fragment, and the address bar updates in place as you change anything:</p>
+  <pre class="f">https://seastate.thrustm.com/#loc=25.00,-90.00&amp;m=5,6,7&amp;h=1.5&amp;wt=1.5&amp;wd=48
+
+loc   latitude,longitude in decimal degrees (WGS84), two decimals
+m     selected months, 1 to 12, comma separated (omitted when all twelve are on)
+h     operational limit in metres (omitted at the default of 2 m)
+wt    weather window threshold in metres
+wd    weather window minimum duration in hours</pre>
+  <p><code>m</code> and <code>h</code> are written only when they differ from the defaults; <code>wt</code> and <code>wd</code> are written whenever the tile set carries weather windows. The query form <code>?loc=...</code> with the same keys is accepted on read. An inbound link centres the map on the point, selects it and applies the months, limit and window pickers; editing the fragment in an open tab re-applies it. Because the state rides the fragment, links work on the static host, inside the embedding page and in the PDF.</p>
+
+  <section class="cta">
+    <h2>Planning a subsea lift?</h2>
+    <p>Weather windows decide when a lift can go. Thrust Maritime provides specialist lifting solutions for subsea operations. This tool is the screening step; a project-specific metocean study, extreme value analysis and vessel response work are what comes next.</p>
+    <p><a href="https://www.thrustm.com" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+  </section>
+
+  <h2 id="licences">8. Licences and attributions</h2>
+
+  <p>The sentences below are the ones the site carries in its data manifests and prints in the explorer footer and the PDF. The footer lists exactly the layers a deployment contains; this page lists every sentence a build can produce.</p>
+
+  <div class="attr">
+    <p><span class="who">ERA5 (Copernicus Climate Change Service, ECMWF), licence CC BY.</span> "Contains modified Copernicus Climate Change Service information [period]. ERA5 hourly data on single levels (significant height of combined wind waves and swell). Neither the European Commission nor ECMWF is responsible for any use of this information."</p>
+    <p><span class="who">WAVERYS (Copernicus Marine Service, Mercator Ocean), free including commercial use with credit.</span> "Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave reanalysis [period], 3 hourly significant wave height, peak period and direction. Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid [span]. Neither the European Commission nor ECMWF nor Mercator Ocean is responsible for any use of this information."</p>
+    <p><span class="who">Hs against Tp tables.</span> "ERA5 reanalysis (ECMWF / Copernicus C3S)", with the joint set's own period, under the ERA5 sentence above.</p>
+    <p><span class="who">Currents and tides (Copernicus Marine Service).</span> "Generated using E.U. Copernicus Marine Service Information: Global Ocean Physics Reanalysis GLORYS12 (background currents, tides excluded) and the Global Ocean hourly merged surface currents (barotropic tidal streams). Tidal statistics are harmonic estimates from six constituents (M2 S2 N2 K1 O1 M4) with nodal factors applied for the fit window; spring and neap rates are the largest and smallest daily peak of a mean-tide reconstruction (N2 excluded); slack windows average turn-bounded runs only; tidal stream statistics are the mean over the water column." The FES tide model itself is licence restricted for commercial use, which is why the tides come through the Copernicus Marine product.</p>
+    <p><span class="who">ETOPO 2022 (NOAA NCEI), public domain.</span> "Water depths: ETOPO 2022 Global Relief Model, NOAA National Centers for Environmental Information (public domain)."</p>
+    <p><span class="who">Natural Earth, public domain.</span> "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain)." The world-view coastline, country borders and place names are Natural Earth 1:50m and 1:10m data, also public domain.</p>
+    <p><span class="who">GSHHS.</span> Where the zoomed-in coast tiles are the GSHHS build: Wessel, P., and W. H. F. Smith, A Global Self-consistent, Hierarchical, High-resolution Shoreline Database, J. Geophys. Res., 101, 8741-8743, 1996.</p>
+    <p><span class="who">IBTrACS (NOAA NCEI), public domain.</span> "Tropical cyclone exposure: IBTrACS v04 best tracks (NOAA NCEI, public domain), tropical-storm strength and above, satellite era (1980 on). Storm counts and storm-days are long-term averages by calendar month within fixed great-circle rings of the point."</p>
+    <p><span class="who">NOAA Climate Prediction Center.</span> Oceanic Ni&ntilde;o Index (ERSSTv5), used for the ENSO phase tagging.</p>
+    <p><span class="who">OpenStreetMap, ODbL.</span> "Platform locations: OpenStreetMap contributors (ODbL, openstreetmap.org/copyright)."</p>
+    <p><span class="who">Global Energy Monitor, CC BY 4.0.</span> "Field locations: Global Oil &amp; Gas Extraction Tracker, Global Energy Monitor (CC BY 4.0). Positions are indicative unit centroids." "Gas pipeline routes: Global Gas Infrastructure Tracker, Global Energy Monitor (CC BY 4.0). Offshore segments only." "Oil/NGL pipeline routes: Global Oil Infrastructure Tracker, Global Energy Monitor (CC BY 4.0). Offshore segments only." "LNG terminals: Global Gas Infrastructure Tracker, Global Energy Monitor (CC BY 4.0)."</p>
+    <p><span class="who">Norwegian Offshore Directorate, NLOD.</span> "Norwegian wellbores and facilities: Norwegian Offshore Directorate FactPages (Norwegian Licence for Open Government Data)."</p>
+    <p><span class="who">US BOEM / BSEE, public domain.</span> "Gulf of Mexico structures and boreholes: US BOEM/BSEE (public domain)."</p>
+    <p><span class="who">Geoscience Australia, CC BY 4.0.</span> "Australian offshore wells and infrastructure: Geoscience Australia (CC BY 4.0)."</p>
+    <p><span class="who">ANP Brazil, open data.</span> "Brazil well and field data: ANP (Agencia Nacional do Petroleo, Gas Natural e Biocombustiveis) open data. Positions are indicative."</p>
+    <p><span class="who">North Sea Transition Authority, Open Government Licence v3.</span> "UK wells, infrastructure and pipelines: North Sea Transition Authority open data (Open Government Licence v3)."</p>
+    <p><span class="who">NLOG.</span> "Dutch continental shelf wells, facilities and pipelines: NLOG (TNO, Netherlands)."</p>
+    <p><span class="who">CNH Mexico.</span> "Mexican wells and fields: CNH (Comision Nacional de Hidrocarburos) open data. Positions are indicative."</p>
+    <p><span class="who">Canadian offshore boards.</span> "Canadian east-coast wells: Canada-Newfoundland and Labrador Offshore Petroleum Board and Canada-Nova Scotia Offshore Petroleum Board open data."</p>
+    <p><span class="who">Denmark.</span> "Danish North Sea wells: Danish Energy Agency / GEUS open data."</p>
+    <p><span class="who">New Zealand Petroleum and Minerals, CC BY 4.0.</span> "New Zealand petroleum wells: New Zealand Petroleum and Minerals (CC BY 4.0)."</p>
+    <p><span class="who">Standards referenced.</span> DNVGL-RP-C205, Environmental conditions and environmental loads, edition August 2017, section 4.1 (clauses 4.1.3.3 and 4.1.4.1 to 4.1.4.8 as described in <a href="#dnv">4.7</a>). DNV-ST-N001 11.12.2.3 is cited for the 20 m/s figure from Thrust Maritime's own calculation practice and is not checked against the text.</p>
+    <p><span class="who">Software.</span> The PDF summary is built in the browser with pdf-lib (MIT licence), vendored unmodified. The site itself is static files: no tile servers, no tracking, no backend.</p>
+  </div>
+
+  <h3>Version and build note</h3>
+  <ul>
+    <li>Each deployment of the explorer is stamped with a build identifier (a git commit id) by <code>tools/stamp_build.py</code>: it is written into the page as <code>window.TM_BUILD</code> and appended as <code>?v=</code> to every script, stylesheet and data request, so a cited page can be tied to the exact code and data it served. View the explorer's page source to read it.</li>
+    <li>The wave dataset behind a deployment is identified by its manifest (source, source label, period, grid, thresholds) and, on the build side, by the SHA256 of its checkpoint and the download ledger. <code>tools/verify_dataset.py</code> writes the engineering sign-off report for a build: ledger reconciled, deployed tiles bit-identical to a fresh re-emit, sampled cells recomputed independently, invariants passed over every tile.</li>
+    <li>This page was checked against the code on 3 September 2026. If the explorer's data point line or footer names a source, period or layer this page does not describe, the explorer is right and this page is behind.</li>
+  </ul>
+
+  <p class="back"><a href="index.html">&larr; Back to the explorer</a></p>
+
+  <footer>
+    <p>Sea State Explorer is published by Thrust Maritime. Values are long term climatological estimates for open water derived from reanalysis data. They are not forecasts, may underestimate extreme conditions including tropical cyclones, and are unreliable close to coastlines and in sheltered or shallow water. Not for design, navigation or operational decision making. No warranty is given.</p>
+  </footer>
+
+</div>
+</body>
+</html>

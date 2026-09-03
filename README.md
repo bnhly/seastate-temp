@@ -16,5 +16,11 @@ of the public site repo so a plain `curl` can reach them while GitHub Pages
 - `cur_tiles.partNN` + `cur.sha256` - the currents tiles (too big for
   Pages), unzipped into data/cur on the host
 - `kit.sha256` - per-file checksums
+- `harden.sh`, `refresh.sh`, `README_KIT.md` (3 Sep 26) - the two console
+  scripts for the running host: the /data/ gate + rate limit + CORS +
+  robots.txt, and the catch-up that re-emits the WAVERYS tiles WITH the
+  ERA5 graft (the first emit ran without it), installs the re-emitted
+  currents tiles (nodal corrections, fixed tile filing) and runs harden.sh.
+  README_KIT.md has the exact console lines.
 
 Delete this branch once the data host is up and verified.

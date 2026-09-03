@@ -80,6 +80,19 @@ def diurnal_col_slots(utc_h):
 # the ERA5 wind graft needs that build's grid
 E5_RES, E5_LAT0, E5_LON0 = 0.5, -90.0, -180.0
 
+
+def e5_row(lat, n):
+    """Nearest ERA5 latitude row (no wrap: 90 N is the last row)."""
+    return int(np.clip(round((lat - E5_LAT0) / E5_RES), 0, n - 1))
+
+
+def e5_col(lon, n):
+    """Nearest ERA5 longitude column WITH wrap. The last WAVERYS column
+    (179.8) rounds to node 720, which is node 0 (-180.0, 0.2 deg away), not
+    the clamped node 719 (179.5, 0.3 deg away). One column in 1800 mapped to
+    the wrong node before this."""
+    return int(round(((lon - E5_LON0) % 360.0) / E5_RES)) % n
+
 ATTRIBUTION_TPL = (
     "Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave "
     "reanalysis [%s], 3 hourly significant wave height, peak period and direction. "
@@ -254,13 +267,17 @@ def grid_window(lats, lons):
     j0 = int(round((LON0 - float(lons[0])) / RES))
     r0, r1 = max(0, -i0), min(NLAT, len(lats) - i0)
     c0, c1 = max(0, -j0), min(NLON, len(lons) - j0)
-    if r1 - r0 < NLAT // 2 or c1 - c0 < NLON // 2:
+    # strict: a file covering exactly half the world (0..359.8 E) is not a
+    # usable window either, it leaves a hemisphere NaN with only a log line
+    if r1 - r0 <= NLAT // 2 or c1 - c0 <= NLON // 2:
         raise SystemExit("file grid %dx%d from %.2f,%.2f overlaps the %dx%d grid "
                          "from %.1f,%.1f in only %dx%d cells"
                          % (len(lats), len(lons), lats[0], lons[0], NLAT, NLON,
                             LAT0, LON0, r1 - r0, c1 - c0))
-    if (abs(float(lats[i0 + r0]) - (LAT0 + r0 * RES)) > 0.5 * RES or
-            abs(float(lons[j0 + c0]) - (LON0 + c0 * RES)) > 0.5 * RES):
+    # quarter-cell tolerance: at exactly half a cell a 0.1 deg offset lattice
+    # (e.g. -89.9..89.7) slipped through and every tile sat 0.1 deg off
+    if (abs(float(lats[i0 + r0]) - (LAT0 + r0 * RES)) > 0.25 * RES or
+            abs(float(lons[j0 + c0]) - (LON0 + c0 * RES)) > 0.25 * RES):
         raise SystemExit("file grid is offset from the expected %.1f deg lattice "
                          "(row %d is %.3f, wanted %.3f)"
                          % (RES, i0 + r0, float(lats[i0 + r0]), LAT0 + r0 * RES))
@@ -354,6 +371,16 @@ def load_era5_wind(era5_workdir):
     z = np.load(path, allow_pickle=False)
     out = {"wind_hist": z["wind_hist"], "wind_sum": z["wind_sum"], "wind_n": z["wind_n"],
            "nb": z["wind_hist"].shape[-1]}
+    # the ERA5 emitter refuses wind for a cell-month holding under 30 percent
+    # of that month's global maximum sample count (its ice rule); wind_n is
+    # that count (wind is accumulated only on steps whose wave field is
+    # finite, the self test asserts wind_n == nsamp). Carry the same mask so
+    # a grafted field never comes from a source cell the ERA5 build itself
+    # would have emitted as -1 (the two models' ice edges differ).
+    wn_all = z["wind_n"]
+    wn_max = np.maximum(wn_all.reshape(12, -1).max(axis=1), 1)
+    out["ok"] = wn_all >= (0.3 * wn_max)[:, None, None]
+    out["span_raw"] = ""
     # the graft file's month list names the span its wind actually covers,
     # which can differ from the wave period; surface it in the attribution
     # rather than letting the wave years imply more than the wind holds.
@@ -362,10 +389,12 @@ def load_era5_wind(era5_workdir):
     # year range cannot say that.
     if "span_note" in z.files:
         out["span"] = " (" + str(z["span_note"]) + ")"
+        out["span_raw"] = str(z["span_note"])
     else:
         dn = [str(x) for x in z["done"].tolist()] if "done" in z.files else []
         dn = [x for x in dn if len(x) >= 7 and x[:4].isdigit()]
         out["span"] = (" (" + dn[0][:4] + "-" + dn[-1][:4] + ")") if dn else ""
+        out["span_raw"] = (dn[0][:4] + "-" + dn[-1][:4]) if dn else ""
     # diurnal wind exists only in ERA5 spans built from 20 Aug 26 on
     if "dw_sum" in z.files and "dw_cnt" in z.files:
         out["dw_sum"] = z["dw_sum"]
@@ -400,6 +429,13 @@ def run_emit(args, acc=None):
 
     wind = None
     wr_sect = wr_pct = wr_rose = None
+    stray = os.path.join(args.workdir, "seastate_accum.npz")
+    if not args.era5_workdir and os.path.exists(stray):
+        raise SystemExit("an ERA5 graft sits at %s but --era5-workdir was not given: the tiles "
+                         "would carry no wind, wind rose, diurnal wind or ENSO fields and "
+                         "nothing downstream would notice (the data host emit of 3 Sep 26 did "
+                         "exactly this). Pass --era5-workdir %s, or move the file away to emit "
+                         "wave-only tiles on purpose." % (stray, args.workdir))
     if args.era5_workdir:
         wind = load_era5_wind(args.era5_workdir)
         print("wind graft: ERA5 checkpoint loaded")
@@ -581,15 +617,14 @@ def run_emit(args, acc=None):
             t["hx"].append([int(x) for m in range(12) for x in (p99_m[m, ib, j], p999_m[m, ib, j])])
             t["hxa"].append([int(p99_a[ib, j]), int(p999_a[ib, j])])
             if wind is not None:
-                ei = int(np.clip(round((lat - E5_LAT0) / E5_RES), 0, wind["wind_n"].shape[1] - 1))
-                ej = int(np.clip(round(((lon - E5_LON0) % 360.0) / E5_RES), 0,
-                                 wind["wind_n"].shape[2] - 1))
+                ei = e5_row(lat, wind["wind_n"].shape[1])
+                ej = e5_col(lon, wind["wind_n"].shape[2])
                 wmv, w9v = [], []
                 for m in range(12):
                     wn = int(wind["wind_n"][m, ei, ej])
                     wh = wind["wind_hist"][m, ei, ej].astype(np.int64)
                     wtot = int(wh.sum())
-                    if not valid_b[m, ib, j] or wtot == 0:
+                    if not valid_b[m, ib, j] or wtot == 0 or not wind["ok"][m, ei, ej]:
                         wmv.append(-1)
                         w9v.append(-1)
                         continue
@@ -615,27 +650,27 @@ def run_emit(args, acc=None):
             else:
                 t["dh"].append([])
             if wr_sect is not None:
-                ei3 = int(np.clip(round((lat - E5_LAT0) / E5_RES), 0, wr_sect.shape[1] - 1))
-                ej3 = int(np.clip(round(((lon - E5_LON0) % 360.0) / E5_RES), 0, wr_sect.shape[2] - 1))
-                t["vd"].append([int(wr_sect[m, ei3, ej3]) if valid_b[m, ib, j] else -1
+                ei3 = e5_row(lat, wr_sect.shape[1])
+                ej3 = e5_col(lon, wr_sect.shape[2])
+                ok3 = [bool(valid_b[m, ib, j] and wind["ok"][m, ei3, ej3]) for m in range(12)]
+                t["vd"].append([int(wr_sect[m, ei3, ej3]) if ok3[m] else -1
                                 for m in range(12)])
-                t["vp"].append([int(wr_pct[m, ei3, ej3]) if valid_b[m, ib, j] else -1
+                t["vp"].append([int(wr_pct[m, ei3, ej3]) if ok3[m] else -1
                                 for m in range(12)])
-                t["vr"].append([int(wr_rose[m, ei3, ej3, s]) if valid_b[m, ib, j] else -1
+                t["vr"].append([int(wr_rose[m, ei3, ej3, s]) if ok3[m] else -1
                                 for m in range(12) for s in range(12)])
             else:
                 t["vd"].append([])
                 t["vp"].append([])
                 t["vr"].append([])
             if wind is not None and "dw_sum" in wind:
-                ei2 = int(np.clip(round((lat - E5_LAT0) / E5_RES), 0, wind["dw_sum"].shape[2] - 1))
-                ej2 = int(np.clip(round(((lon - E5_LON0) % 360.0) / E5_RES), 0,
-                                  wind["dw_sum"].shape[3] - 1))
+                ei2 = e5_row(lat, wind["dw_sum"].shape[2])
+                ej2 = e5_col(lon, wind["dw_sum"].shape[3])
                 dwrow = []
                 for m in range(12):
                     for s in range(DI_NB):
                         cnt = int(wind["dw_cnt"][m, s, ei2, ej2])
-                        if cnt == 0 or not valid_b[m, ib, j]:
+                        if cnt == 0 or not valid_b[m, ib, j] or not wind["ok"][m, ei2, ej2]:
                             dwrow.append(-1)
                         else:
                             dwrow.append(int(np.round(10.0 * float(wind["dw_sum"][m, s, ei2, ej2]) / cnt)))
@@ -643,14 +678,14 @@ def run_emit(args, acc=None):
             else:
                 t["dw"].append([])
             if en is not None:
-                ei4 = int(np.clip(round((lat - E5_LAT0) / E5_RES), 0, en["ns"].shape[2] - 1))
-                ej4 = int(np.clip(round(((lon - E5_LON0) % 360.0) / E5_RES), 0,
-                                  en["ns"].shape[3] - 1))
+                ei4 = e5_row(lat, en["ns"].shape[2])
+                ej4 = e5_col(lon, en["ns"].shape[3])
                 t["pn"].append([int(en["ns"][p, m, ei4, ej4])
                                 for m in range(12) for p in range(3)])
-                t["pm"].append([int(en["mean"][p, m, ei4, ej4]) if valid_b[m, ib, j] else -1
+                ok4 = [bool(valid_b[m, ib, j] and wind["ok"][m, ei4, ej4]) for m in range(12)]
+                t["pm"].append([int(en["mean"][p, m, ei4, ej4]) if ok4[m] else -1
                                 for m in range(12) for p in range(3)])
-                t["pe"].append([int(en["exc"][p, m, ei4, ej4, x9]) if valid_b[m, ib, j] else -1
+                t["pe"].append([int(en["exc"][p, m, ei4, ej4, x9]) if ok4[m] else -1
                                 for m in range(12) for p in range(3) for x9 in range(NT)])
             else:
                 t["pn"].append([])
@@ -693,7 +728,10 @@ def run_emit(args, acc=None):
             mg = np.where(w2 > 0, np.round(10.0 * h2 / w2), -1).astype(int)
         mean_grid.append([int(x) for x in mg.flatten()])
     with open(os.path.join(args.out, "meanhs.json"), "w") as fh:
-        json.dump({"res": g_res, "lat0": -89.0, "lon0": -179.0, "nlat": g_nlat, "nlon": g_nlon,
+        # block (r, c) sums 10 x 10 cells whose centres run -90 + 2r .. -90 + 2r + 1.8
+        # (and likewise in longitude), so the block centre is 0.9 deg past the
+        # round number, not 1.0: the client places the block at lat0 + 2r
+        json.dump({"res": g_res, "lat0": -89.1, "lon0": -179.1, "nlat": g_nlat, "nlon": g_nlon,
                    "mean": mean_grid}, fh, separators=(",", ":"))
 
     manifest = {
@@ -710,7 +748,11 @@ def run_emit(args, acc=None):
         "wind": wind is not None,
         "enso": ({"phases": ["elnino", "neutral", "lanina"],
                   "index": "ONI (NOAA CPC, ERSSTv5), +/-0.5 C monthly threshold",
-                  "source": "ERA5 0.5 deg graft"}
+                  "source": "ERA5 0.5 deg graft",
+                  "period": wind["span_raw"] if wind is not None else "",
+                  "note": "phase means and exceedances are ERA5 wave statistics for the "
+                          "graft period, not WAVERYS; compare phases against each other, "
+                          "not against the headline mean"}
                  if en is not None else False),
         "tile_deg": TILE_DEG,
         "max_snap_km": 150,

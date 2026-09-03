@@ -212,7 +212,10 @@
     var n = rose.length, half = Math.PI / n;
     for (i = 0; i < n; i++) {
       if (!rose[i]) continue;
-      var ang = (i / n) * 2 * Math.PI;          /* 0 = north, clockwise */
+      /* sector i holds directions [360i/n, 360(i+1)/n): centre the petal on
+         the sector centre so it matches the on-screen SVG rose (was drawn on
+         the sector START, 15 deg anticlockwise of the data) */
+      var ang = ((i + 0.5) / n) * 2 * Math.PI;  /* 0 = north, clockwise */
       var len = r * (rose[i] / maxv);
       var p0 = { x: cx, y: cy };
       var p1 = { x: cx + len * Math.sin(ang - half), y: cy + len * Math.cos(ang - half) };

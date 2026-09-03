@@ -1333,7 +1333,12 @@
         }
         if (!nLine && !nTrack) nDepth = self.hitContour(e.offsetX, e.offsetY);
       }
-      var dChanged = (nDepth && nDepth.d) !== (self.hoverDepth && self.hoverDepth.d);
+      /* the anchor moves as the cursor slides along one contour, so it is
+         part of the change test (the callout used to stick at the first hit) */
+      var dChanged = (!!nDepth) !== (!!self.hoverDepth) ||
+        (nDepth && self.hoverDepth && (nDepth.d !== self.hoverDepth.d ||
+          (nDepth.at && self.hoverDepth.at &&
+           (nDepth.at.x !== self.hoverDepth.at.x || nDepth.at.y !== self.hoverDepth.at.y))));
       if (next !== self.hoverAsset || nLine !== self.hoverLine ||
           nTrack !== self.hoverTrack || dChanged) {
         self.hoverAsset = next;

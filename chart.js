@@ -609,8 +609,12 @@
       var pad = Math.max((hi - lo) * 0.25, hi * 0.02, 0.05);
       var yMin = Math.max(0, lo - pad), yMax = hi + pad;
       function Y(v) { return m.t + (1 - (v - yMin) / (yMax - yMin)) * ih; }
-      function X(idx) { return x0 + (iw / 8) * (idx + 0.5); }
+      /* slot idx is centred on local solar hour 3*idx (the emitter rounds
+         to the nearest slot), so it sits at XH(3*idx) on the same hour axis
+         the night shading uses; slot 0 (23:30-01:30) is drawn at midnight
+         on the left edge */
       function XH(h) { return x0 + iw * (h / 24); }
+      function X(idx) { return XH(3 * idx); }
       /* night shading behind everything else */
       if (spec.nightRise !== null && spec.nightRise !== undefined && spec.nightRise > 0) {
         el("rect", { x: x0, y: m.t, width: XH(spec.nightRise) - x0, height: ih,
@@ -643,12 +647,14 @@
             { "text-anchor": "middle", fill: C.muted, "font-size": 10 });
         }
         (function (idx) {
-          var hit = el("rect", { x: x0 + (iw / 8) * idx, y: m.t, width: iw / 8, height: ih,
-            fill: "transparent" }, svg);
+          var hit = el("rect", { x: Math.max(x0, X(idx) - iw / 16), y: m.t,
+            width: idx === 0 ? iw / 16 : iw / 8, height: ih, fill: "transparent" }, svg);
           hit.addEventListener("mousemove", function (ev) {
-            var t0h = ("0" + (idx * 3)).slice(-2), t1h = ("0" + ((idx * 3 + 3) % 24)).slice(-2);
+            var hc = idx * 3;
+            var hA = ("0" + Math.floor((hc - 1.5 + 24) % 24)).slice(-2) + ":30";
+            var hB = ("0" + Math.floor(hc + 1.5)).slice(-2) + ":30";
             tip(true, ev.clientX, ev.clientY,
-              t0h + ":00 to " + t1h + ":00 local solar: " +
+              "around " + ("0" + hc).slice(-2) + ":00 local solar (" + hA + " to " + hB + "): " +
               (p.vals[idx] === null ? "no data" : "<b>" + p.fmt(p.vals[idx]) + "</b>"));
           });
           hit.addEventListener("mouseleave", function () { tip(false); });

@@ -511,13 +511,21 @@
     var self = this, mf = this.manifest, t = mf.tile_deg;
     lon = wrapLon(lon);
     /* tiles overlapping a search box around the click */
-    var ids = {}, dlat, dlon, la, lo;
+    /* the probe must reach as far as the snap radius, and a degree of
+       longitude shrinks poleward: 350 km is 6.3 deg at 60 N, so a fixed
+       0.6-tile box left inland Alaska clicks with "no data" although a
+       sea cell sat inside the radius */
+    var snap = mf.max_snap_km || 350;
+    var dLat = t * 0.6;
+    var dLon = Math.min(2 * t, Math.max(t * 0.6,
+      snap / (111 * Math.max(0.15, Math.cos(lat * Math.PI / 180)))));
+    var ids = {}, dlat, la, lo;
     for (dlat = -1; dlat <= 1; dlat++) {
-      for (dlon = -1; dlon <= 1; dlon++) {
-        la = Math.max(-89.9, Math.min(89.9, lat + dlat * t * 0.6));
-        lo = lon + dlon * t * 0.6;
+      la = Math.max(-89.9, Math.min(89.9, lat + dlat * dLat));
+      for (lo = lon - dLon; lo <= lon + dLon + 1e-9; lo += t * 0.5) {
         ids[this.tileIdFor(la, lo)] = 1;
       }
+      ids[this.tileIdFor(la, lon + dLon)] = 1;
     }
     var list = Object.keys(ids);
     return Promise.all(list.map(function (id) { return self.loadTile(id); })).then(function (tilesArr) {
@@ -857,6 +865,41 @@
     return a0 + (a1 - a0) * t;
   }
 
+  /* Marching squares never forms a square between one tile's last row or
+     column and the next tile's first, so every contour crossing a tile edge
+     had a one-cell gap. Build two-row / two-column virtual tiles over each
+     seam between loaded neighbours and contour those too. Corner squares
+     between diagonal neighbours are skipped (one cell). */
+  function seamTiles(loaded) {
+    var out = [], a, b, i, j, A, B, r, elev;
+    for (i = 0; i < loaded.length; i++) {
+      A = loaded[i].tile;
+      if (!A) continue;
+      for (j = 0; j < loaded.length; j++) {
+        B = loaded[j].tile;
+        if (!B || i === j || B.res !== A.res) continue;
+        if (Math.abs(B.lat0 - (A.lat0 + A.nlat * A.res)) < 1e-6 &&
+            Math.abs(B.lon0 - A.lon0) < 1e-6 && B.nlon === A.nlon) {
+          elev = A.elev.slice((A.nlat - 1) * A.nlon).concat(B.elev.slice(0, B.nlon));
+          out.push({ tid: "seam:" + loaded[i].tid + "|" + loaded[j].tid,
+                     tile: { res: A.res, lat0: A.lat0 + (A.nlat - 1) * A.res, lon0: A.lon0,
+                             nlat: 2, nlon: A.nlon, elev: elev } });
+        }
+        if (Math.abs(B.lon0 - (A.lon0 + A.nlon * A.res)) < 1e-6 &&
+            Math.abs(B.lat0 - A.lat0) < 1e-6 && B.nlat === A.nlat) {
+          elev = [];
+          for (r = 0; r < A.nlat; r++) {
+            elev.push(A.elev[r * A.nlon + A.nlon - 1], B.elev[r * B.nlon]);
+          }
+          out.push({ tid: "seam:" + loaded[i].tid + "|" + loaded[j].tid,
+                     tile: { res: A.res, lat0: A.lat0, lon0: A.lon0 + (A.nlon - 1) * A.res,
+                             nlat: A.nlat, nlon: 2, elev: elev } });
+        }
+      }
+    }
+    return out;
+  }
+
   /* Depth is positive down; the tile stores elevation, negative at sea. */
   function contourTile(tile, level) {
     var segs = [], r, c, nlon = tile.nlon, nlat = tile.nlat, e = tile.elev;
@@ -871,8 +914,11 @@
         var idx = (sw < target ? 1 : 0) | (se < target ? 2 : 0) |
                   (ne < target ? 4 : 0) | (nw < target ? 8 : 0);
         if (idx === 0 || idx === 15) continue;
-        var latS = lat0 + r * res, latN = latS + res;
-        var lonW = lon0 + c * res, lonE = lonW + res;
+        /* sample (r, c) is the mean over the cell [lat0+r*res, lat0+(r+1)*res):
+           it belongs at the cell CENTRE. Registering it at the corner put
+           every contour 0.05 deg (5.6 km) south-west of where it belongs. */
+        var latS = lat0 + (r + 0.5) * res, latN = latS + res;
+        var lonW = lon0 + (c + 0.5) * res, lonE = lonW + res;
         /* crossing point on each edge, when that edge is crossed */
         var bot = null, top = null, lft = null, rgt = null;
         if ((sw < target) !== (se < target)) bot = { lat: latS, lon: interpEdge(sw, se, lonW, lonE, target) };
@@ -935,12 +981,15 @@
         return depthStore.tiles[tid].then(function (t) { return { tid: tid, tile: t }; });
       });
       return Promise.all(gets).then(function (loaded) {
-        var out = [], li, k;
+        var out = [], li, k, seams = seamTiles(loaded);
         for (li = 0; li < levels.length; li++) {
           var segs = [];
           for (k = 0; k < loaded.length; k++) {
             if (!loaded[k].tile) continue;
             segs = segs.concat(tileContours(loaded[k].tile, loaded[k].tid, levels[li]));
+          }
+          for (k = 0; k < seams.length; k++) {
+            segs = segs.concat(tileContours(seams[k].tile, seams[k].tid, levels[li]));
           }
           if (segs.length) out.push({ d: levels[li], segs: segs });
         }
@@ -978,7 +1027,16 @@
       if (!mf) return null;
       var t = mf.tile_deg;
       var lonW = wrapLon(lon);
-      var tid = "j_" + (Math.floor(lat / t) * t) + "_" + (Math.floor(lonW / t) * t);
+      /* blocks are 1 deg squares centred on -89.25+i / -179.75+j (two 0.5
+         deg grid rows and columns each) and the emitter files a block under
+         the tile of its CENTRE. A wave cell on a 10 deg latitude line sits
+         in the upper row of a block whose centre lies in the tile below,
+         so the tile has to come from the block centre, not the query point
+         (every cell on a 10 deg line lost its scatter before this, 4.9 percent). */
+      var bLat = Math.round(lat + 89.25) - 89.25;
+      var bLon = Math.round(lonW + 179.75) - 179.75;
+      if (bLon < -179.75) bLon = 179.25;
+      var tid = "j_" + (Math.floor(bLat / t) * t) + "_" + (Math.floor(bLon / t) * t);
       if (mf.tiles.indexOf(tid) < 0) return null;
       if (!jointStore.tiles[tid]) {
         jointStore.tiles[tid] = fetch(vurl(base + "joint/" + tid + ".json")).then(function (r) {
@@ -990,8 +1048,8 @@
         if (!tile) return null;
         var best = -1, bd = 0.75 * 0.75, i, d;
         for (i = 0; i < tile.lat.length; i++) {
-          d = (tile.lat[i] - lat) * (tile.lat[i] - lat) +
-              (tile.lon[i] - lonW) * (tile.lon[i] - lonW);
+          d = (tile.lat[i] - bLat) * (tile.lat[i] - bLat) +
+              (tile.lon[i] - bLon) * (tile.lon[i] - bLon);
           if (d < bd) { bd = d; best = i; }
         }
         if (best < 0) return null;
@@ -1103,9 +1161,16 @@
           };
         }
         if (tl.ts) {
+          /* s25/s50 carry the emitter's 999 cap when the stream never ends
+             a run below the threshold inside the reconstruction: that is
+             "not resolved", not a number of minutes */
+          function slack(name) {
+            var v = one(name);
+            return v !== null && v >= 999 ? null : v;
+          }
           res.tide = {
             spring: one("ts", 100), neap: one("tn", 100), form: one("tf", 100),
-            bearing: one("tb"), slack25: one("s25"), slack50: one("s50"),
+            bearing: one("tb"), slack25: slack("s25"), slack50: slack("s50"),
             perDay: one("ns", 10)
           };
         }
@@ -1140,14 +1205,17 @@
       var t = mf.tile_deg, lonW = wrapLon(lon);
       var tlat = Math.floor((lat + 90) / t) * t - 90;
       var tlon = Math.floor((lonW + 180) / t) * t - 180;
-      var ids = {}, dlat, dlon;
+      /* 170 km snap = 1.53 deg of latitude, more of longitude poleward */
+      var ids = {}, dlat, lo2, la2;
+      var dLonC = Math.min(2 * t, 1.6 / Math.max(0.15, Math.cos(lat * Math.PI / 180)));
       for (dlat = -1; dlat <= 1; dlat++) {
-        for (dlon = -1; dlon <= 1; dlon++) {
-          var la2 = Math.max(-89.9, Math.min(89.9, lat + dlat * 0.9));
-          var lo2 = wrapLon(lonW + dlon * 0.9);
+        la2 = Math.max(-89.9, Math.min(89.9, lat + dlat * 1.6));
+        for (lo2 = lonW - dLonC; lo2 <= lonW + dLonC + 1e-9; lo2 += t * 0.5) {
           ids["cyc_" + (Math.floor((la2 + 90) / t) * t - 90) + "_" +
-              (Math.floor((lo2 + 180) / t) * t - 180)] = 1;
+              (Math.floor((wrapLon(lo2) + 180) / t) * t - 180)] = 1;
         }
+        ids["cyc_" + (Math.floor((la2 + 90) / t) * t - 90) + "_" +
+            (Math.floor((wrapLon(lonW + dLonC) + 180) / t) * t - 180)] = 1;
       }
       var list = Object.keys(ids).filter(function (id) { return mf.tiles.indexOf(id) >= 0; });
       list.forEach(function (id) {
@@ -1171,7 +1239,7 @@
            finds nothing nearby, which IS the answer (no exposure) */
         if (!best || best.km > 170) return { none: true, radii: mf.radii_nm, attribution: mf.attribution };
         var NRr = mf.radii_nm.length, tl = best.tile, ix = best.idx;
-        var storms = [], days = [], m, r, srow, drow;
+        var storms = [], days = [], m, r, srow, drow, res_storms_all = null;
         /* ENSO phase split of storm-days (datasets built from 23 Aug 26 on):
            [12][NRr][3] per-phase-year averages, null where the record holds
            no year of that phase for the month */
@@ -1187,6 +1255,11 @@
           }
           storms.push(srow);
           days.push(drow);
+          if (m === 0) {
+            /* sa: distinct storms per ring across the whole year (x100 per
+               season), emitted from 3 Sep 26 on; older tiles lack it */
+            res_storms_all = tl.sa ? tl.sa[ix].map(function (x) { return x < 0 ? null : x / 100; }) : null;
+          }
           if (phDays) {
             prow = [];
             for (r = 0; r < NRr; r++) {
@@ -1203,7 +1276,7 @@
         return {
           none: false, radii: mf.radii_nm, seasons: mf.seasons,
           attribution: mf.attribution,
-          storms: storms, days: days,
+          storms: storms, days: days, stormsAll: res_storms_all,
           wmax: tl.w[ix].slice(),
           enso: phDays ? { days: phDays, ym: mf.enso.years_by_month } : null
         };
@@ -1224,8 +1297,8 @@
         m = months[mi];
         n0 = res.enso.n[m][p];
         if (!n0) continue;
-        mWith++;
         pc = interpExceedance(thresholds, res.enso.exc[m][p], limit);
+        if (pc.p !== null || res.enso.mean[m][p] !== null) mWith++;   /* masked months do not count */
         if (pc.p !== null) { cSum += pc.p * n0; nSum += n0; }
         if (res.enso.mean[m][p] !== null) { hSum += res.enso.mean[m][p] * n0; hN += n0; }
       }
@@ -1455,9 +1528,25 @@
       for (k = 0; k + 1 < flat.length; k += 2) {
         la += flat[k];
         lo += flat[k + 1];
-        pts.push([la / 100, lo / 100]);
+        pts.push([la / 100, wrapLon(lo / 100)]);
       }
-      if (pts.length >= 2) out.push({ n: tr.n, y: tr.y, w: tr.w, pts: pts });
+      /* the emitter unwraps longitudes past +/-180 so the deltas stay small;
+         the renderer's world-copy cull and the hit-test both assume
+         [-180,180), so a track that crossed the antimeridian used to vanish
+         whenever the dateline was not at the left of the view. Wrap back and
+         split the polyline where consecutive points jump across it. */
+      var piece = [], pieces = [];
+      for (k = 0; k < pts.length; k++) {
+        if (piece.length && Math.abs(pts[k][1] - piece[piece.length - 1][1]) > 180) {
+          pieces.push(piece);
+          piece = [];
+        }
+        piece.push(pts[k]);
+      }
+      if (piece.length) pieces.push(piece);
+      for (k = 0; k < pieces.length; k++) {
+        if (pieces[k].length >= 2) out.push({ n: tr.n, y: tr.y, w: tr.w, pts: pieces[k] });
+      }
     }
     return out;
   }
@@ -1548,15 +1637,23 @@
   /* Aggregate cyclone exposure over selected months at one radius index. */
   function cycSummary(cyc, months, ri) {
     if (!cyc || cyc.none) return null;
-    var storms = 0, days = 0, i, m, any = false;
+    var storms = 0, days = 0, i, m, any = false, exact = months.length <= 1;
     for (i = 0; i < months.length; i++) {
       m = months[i];
       storms += cyc.storms[m][ri];
       days += cyc.days[m][ri];
       if (cyc.storms[m][ri] > 0 || cyc.days[m][ri] > 0) any = true;
     }
+    /* the per-month counts mark a storm once per month it spends inside
+       the ring, so a sum over months counts a boundary-straddling storm
+       twice; over all twelve months the emitter's distinct count (sa) is
+       exact when the tile carries it */
+    if (months.length === 12 && cyc.stormsAll && cyc.stormsAll[ri] !== null) {
+      storms = cyc.stormsAll[ri];
+      exact = true;
+    }
     return {
-      storms: storms, days: days, any: any,
+      storms: storms, days: days, any: any, exact: exact,
       wmax: cyc.wmax[ri],
       category: cycCategory(cyc.wmax[ri]),
       perMonth: cyc.days.map(function (row) { return row[ri]; })
@@ -1677,8 +1774,10 @@
   function combineMonths(data, months, thresholds) {
     var p = [], ti, m, num, den, v, nTotal = 0, usedMonths = [];
     for (m = 0; m < months.length; m++) {
-      if (data.n[months[m]] > 0 && data.exc[months[m]][0] !== null) usedMonths.push(months[m]);
-      nTotal += data.n[months[m]] || 0;
+      if (data.n[months[m]] > 0 && data.exc[months[m]][0] !== null) {
+        usedMonths.push(months[m]);
+        nTotal += data.n[months[m]];   /* masked (ice) months carry no statistics */
+      }
     }
     for (ti = 0; ti < thresholds.length; ti++) {
       num = 0; den = 0;

@@ -586,3 +586,11 @@ html, body {
 /* heat cells carry literal dark text on their literal pale backgrounds, so
    they read the same in both themes (house dark-theme rule) */
 .tm-scatter td.tm-sc-heat { color: #14304a; }
+
+/* DNV-RP-C205 profile table in the currents panel (fixed light theme, like the rest) */
+.tm-prof { border-collapse: separate; border-spacing: 0; margin: 4px 4px 8px; font-size: 12px; color: #1b2631; }
+.tm-prof caption { text-align: left; font-weight: 600; font-size: 12.2px; padding: 0 0 4px; color: #1b2631; }
+.tm-prof th, .tm-prof td { border-bottom: 1px solid #e3e8eb; padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }
+.tm-prof th { font-weight: 600; color: #4a5560; }
+.tm-prof th:first-child, .tm-prof td:first-child { text-align: left; }
+.tm-prof-note { margin: 0 4px 8px; font-size: 11.4px; color: #5c6771; line-height: 1.4; }

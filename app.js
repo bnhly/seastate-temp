@@ -549,7 +549,8 @@
     var t = state.provider.thresholds;
     var lim = Math.max(SHOW_HS_MAX, state.limit || 0);
     var n = 0;
-    while (n < t.length && t[n] <= lim + 0.001) n++;
+    while (n < t.length && t[n] < lim - 0.001) n++;
+    if (n < t.length) n++;   /* include the first threshold at or above the limit */
     return n;
   }
 
@@ -781,7 +782,7 @@
     setStickyAnswer(big.textContent,
       (lim.p === null || sel.length === 0)
         ? sub.textContent
-        : "H\u209b above " + state.limit + " m, " + monthsLabel().toLowerCase() +
+        : "H\u209b above " + state.limit + " m, " + monthsLabel().replace(/^Across/, "across") +
           "  \u00b7  " + D.fmtLatLon(state.selected.lat, state.selected.lon));
 
     /* charts */
@@ -849,8 +850,9 @@
         $("tm-tp-note").hidden = false;
         window.TMCharts.renderTpHist($("tm-tp"), tpAgg);
         var moLo = tpAgg.t0 + tpAgg.modeIdx * tpAgg.step;
-        state.lastTpMode = "Peak period " + monthsLabel() + ": most often " + moLo + "-" +
-          (moLo + tpAgg.step) + " s (" + Math.round(tpAgg.modePct) + "% of the time).";
+        var moLbl = tpAgg.modeIdx === tpAgg.nb - 1 ? moLo + " s and longer" : moLo + "-" + (moLo + tpAgg.step) + " s";
+        state.lastTpMode = "Peak period " + monthsLabel() + ": most often " + moLbl +
+          " (" + Math.round(tpAgg.modePct) + "% of the time).";
       } else {
         $("tm-tp-title").textContent = "Typical peak period, by month";
         $("tm-tp-note").hidden = true;
@@ -906,7 +908,8 @@
     if (curSum) {
       var siteDepth = (state.depthExact && state.depthExact.key === cellKey &&
         state.depthExact.val) ? state.depthExact.val.m : null;
-      renderCurPanel(curSum, siteDepth);
+      var wndCur = D.windSummary(res, sel.length ? sel : monthIdxList());
+      renderCurPanel(curSum, siteDepth, wndCur ? wndCur.p90 : null);
     }
 
     /* tropical cyclone exposure: embedded in demo results, fetched from the
@@ -1053,8 +1056,21 @@
     var sumEl = $("tm-win-sum");
     if (any && sel.length) {
       var nTxt = sum >= 10 ? String(Math.round(sum)) : (Math.round(sum * 10) / 10).toString();
+      /* the tracker cuts an unbroken calm every 240 h and counts each cut
+         once, so a site that is calm nearly all the time shows about three
+         spells a month by construction. Pair the count with the share of
+         time below the limit and say the cut, or "38 spells" reads as
+         weather at a site that has none. */
+      var combW = D.combineMonths(res, sel, state.provider.thresholds);
+      var aboveW = D.interpExceedance(state.provider.thresholds, combW.p, thr);
+      var belowPct = (aboveW && aboveW.p !== null) ? 100 - aboveW.p : null;
+      var belowTxt = belowPct === null ? ""
+        : (belowPct >= 99.5
+          ? " The sea is below " + thr + " m nearly all of the time in these months."
+          : " The sea is below " + thr + " m about " + Math.round(belowPct) + "% of the time in these months.");
       state.lastWindows = "Weather windows " + monthsLabel() + ": a typical year gives about " +
-        nTxt + " spell" + (sum === 1 ? "" : "s") + " of " + dur + " h or more below " + thr + " m.";
+        nTxt + " spell" + (sum === 1 ? "" : "s") + " of " + dur + " h or more below " + thr + " m." +
+        belowTxt + " A calm running past 240 h is counted once per 240 h.";
       sumEl.textContent = state.lastWindows;
     } else {
       sumEl.textContent = "";
@@ -1065,7 +1081,63 @@
     return ms.toFixed(2).replace(/0$/, "") + " m/s (" + (ms * 1.94384).toFixed(1) + " kn)";
   }
 
-  function renderCurPanel(cs, depthM) {
+  /* Current profile through the water column, combined the way
+     DNV-RP-C205 section 4.1.4 describes it: tidal + wind-generated +
+     circulation, each with its own depth variation, summed colinearly (the
+     code sums vectors; taking them aligned is the conservative reading).
+       tidal (4.1.4.3)  v_t(z) = v_t(0) x ((d - z) / d)^(1/7). The surface
+                        value is 8/7 x the modelled depth mean, because the
+                        1/7 profile averages to 7/8 of its surface value.
+       wind (4.1.4.4)   v_w(z) = k x U_1h,10m x (1 - z / d0) down to d0 =
+                        50 m, zero below; k = 0.03, the top of the code's
+                        0.015 to 0.03 range. U is the site's P90 10 m wind
+                        over the selected months (3 hourly reanalysis values
+                        sit close to hourly means).
+       circulation      the GLORYS residual P90: surface value at z = 0, the
+                        deepest modelled level's value at its depth, linear
+                        between, held constant below.
+     The modelled surface residual already holds the wind drift GLORYS
+     resolves, so adding the code's wind term is conservative near the
+     surface; the note under the table says so. */
+  var DNV_K_WIND = 0.03, DNV_D0_WIND = 50, DNV_N001_WIND = 20;
+
+  function curProfile(cs, depthM, windP90) {
+    var t = cs.tide, b = cs.bg;
+    var vt0 = (t && t.spring !== null) ? t.spring * 8 / 7 : null;
+    var vw0 = (windP90 !== null && windP90 !== undefined) ? DNV_K_WIND * windP90 : null;
+    var bs = (b && b.surfP90 !== null) ? b.surfP90 : null;
+    var bd = (b && b.botP90 !== null && b.botDepth !== null && b.botDepth >= 1)
+      ? { z: b.botDepth, v: b.botP90 } : null;
+    if (vt0 === null && vw0 === null && bs === null) return null;
+    var d = (depthM && depthM > 2) ? depthM : null;
+    var zs = [0], cand = [5, 10, 25, 50, 100, 200], i, z, vt, vw, vc, tot, any, rows = [];
+    if (d) {
+      for (i = 0; i < cand.length; i++) if (cand[i] < d - 1) zs.push(cand[i]);
+      zs.push(d - 1);
+    }
+    for (i = 0; i < zs.length; i++) {
+      z = zs[i];
+      vt = vt0 === null ? null : (d ? vt0 * Math.pow((d - z) / d, 1 / 7) : (z === 0 ? vt0 : null));
+      vw = vw0 === null ? null : vw0 * Math.max(0, 1 - z / DNV_D0_WIND);
+      vc = null;
+      if (bs !== null) {
+        if (bd && z >= bd.z) vc = bd.v;
+        else if (bd) vc = bs + (bd.v - bs) * (z / bd.z);
+        else vc = bs;
+      }
+      tot = 0; any = false;
+      if (vt !== null) { tot += vt; any = true; }
+      if (vw !== null) { tot += vw; any = true; }
+      if (vc !== null) { tot += vc; any = true; }
+      rows.push({ z: z, label: (d && i === zs.length - 1) ? "1 m above bed" : (z === 0 ? "Surface" : z + " m"),
+                  vt: vt, vw: vw, vc: vc, tot: any ? tot : null });
+    }
+    return { rows: rows, vt0: vt0, vw0: vw0, windP90: windP90, d: d, hasBottom: !!bd, hasSurfBg: bs !== null };
+  }
+
+  function fmt2(v) { return v === null ? "\u2013" : v.toFixed(2); }
+
+  function renderCurPanel(cs, depthM, windP90) {
     var box = $("tm-cur");
     box.innerHTML = "";
     var lines = [];
@@ -1074,6 +1146,7 @@
       if (t.form === null) chr = null;
       else if (t.form < 0.25) chr = "semidiurnal: it peaks roughly every 6.2 hours";
       else if (t.form <= 1.5) chr = "mixed, mainly semidiurnal: peaks roughly every 6 hours, alternating stronger and weaker";
+      else if (t.form <= 3) chr = "mixed, mainly diurnal: one strong and one weak peak most days";
       else chr = "diurnal: it peaks roughly every 12.4 hours";
       if (t.spring !== null) {
         /* the source statistic is the depth-mean (barotropic) stream, but
@@ -1091,12 +1164,24 @@
             (t.neap !== null ? fmtSpeed(t.neap * bf) : "less") + " at neaps."
           : "Near the seabed expect roughly two thirds of the surface stream.");
       }
-      if (t.slack50 !== null && t.spring !== null && t.spring > 0.5) {
-        lines.push(t.slack50 === 0
-          ? "The stream rotates rather than stopping: there is no true slack window at the turn of the tide."
-          : "Around each turn of the tide the stream stays below 0.5 m/s (1 kn) for about " + Math.round(t.slack50) +
-            " min" + (t.slack25 !== null && t.slack25 > 0 ? " (below 0.25 m/s for about " + Math.round(t.slack25) + " min)" : "") + ".");
-      } else if (t.spring !== null && t.spring <= 0.5) {
+      /* The emitted slack figure is the mean length of every run below
+         the threshold in a 35 day reconstruction. That is a per-turn
+         window only when neaps also clear the threshold; otherwise the
+         runs merge into day-long neap lulls and the mean says nothing
+         about a turn of the tide (it also hits the emitter's 999 cap).
+         Gates use the surface-scaled speeds the reader is shown. */
+      var sSpring = t.spring !== null ? t.spring * sf : null;
+      var sNeap = t.neap !== null ? t.neap * sf : null;
+      if (sSpring !== null && sSpring > 0.5) {
+        if (t.slack50 === 0) {
+          lines.push("The stream rotates rather than stopping: there is no true slack window at the turn of the tide.");
+        } else if (sNeap !== null && sNeap > 0.5 && t.slack50 !== null && t.slack50 < 999) {
+          lines.push("Around each turn of the tide the stream stays below 0.5 m/s (1 kn) for about " + Math.round(t.slack50) +
+            " min" + (t.slack25 !== null && t.slack25 > 0 && t.slack25 < 999 ? " (below 0.25 m/s for about " + Math.round(t.slack25) + " min)" : "") + ".");
+        } else if (sNeap !== null && sNeap <= 0.5) {
+          lines.push("At neaps the stream stays below 0.5 m/s (1 kn) for long spells; slack windows around springs are short.");
+        }
+      } else if (sSpring !== null) {
         lines.push("The tidal stream rarely exceeds 0.5 m/s (1 kn) here even at peak.");
       }
       if (t.perDay !== null && t.perDay >= 1 && t.spring !== null && t.spring > 0.25) {
@@ -1109,9 +1194,14 @@
         bb.push("typically " + fmtSpeed(b.surfP50) + " at the surface" +
           (b.surfP90 !== null ? ", top decile " + fmtSpeed(b.surfP90) : ""));
       }
-      if (b.botP50 !== null) {
-        bb.push("near the seabed" + (b.botDepth ? " (about " + Math.round(b.botDepth) + " m)" : "") +
-          " typically " + fmtSpeed(b.botP50) +
+      if (b.botP50 !== null && b.botDepth !== null && b.botDepth >= 1) {
+        /* botDepth is the deepest model level that was wet (29 to 644 m),
+           not the seabed; it can sit well above the bed, and beyond 644 m
+           it always reads 644. Say which it is. */
+        var deepLbl = (depthM && depthM > b.botDepth * 1.25)
+          ? "at " + Math.round(b.botDepth) + " m depth (deepest modelled level; the bed is at ~" + Math.round(depthM).toLocaleString() + " m)"
+          : "near the seabed (model level ~" + Math.round(b.botDepth) + " m)";
+        bb.push(deepLbl + " typically " + fmtSpeed(b.botP50) +
           (b.botP90 !== null ? ", top decile " + fmtSpeed(b.botP90) : ""));
       }
       if (bb.length) {
@@ -1124,7 +1214,66 @@
       p.textContent = lines[i];
       box.appendChild(p);
     }
-    state.lastCur = lines.length ? lines : null;
+    /* DNV-RP-C205 4.1.4 profile table, plus text rows for the PDF / copy text */
+    var prof = curProfile(cs, depthM, windP90), profLines = [];
+    if (prof && prof.rows.length) {
+      var parts = [];
+      if (prof.vt0 !== null) parts.push("spring tide");
+      if (prof.vw0 !== null) parts.push("P90 wind");
+      if (prof.hasSurfBg) parts.push("P90 background");
+      var head = "Through the water column (DNV-RP-C205 4.1.4 combination, " + parts.join(" + ") + "), m/s";
+      var tbl = document.createElement("table"), tr, th, td, j, r, cols;
+      tbl.className = "tm-prof";
+      var cap = document.createElement("caption");
+      cap.textContent = head;
+      tbl.appendChild(cap);
+      tr = document.createElement("tr");
+      cols = ["Depth", "Tidal", "Wind-driven", "Background", "Combined"];
+      for (j = 0; j < cols.length; j++) {
+        th = document.createElement("th");
+        th.textContent = cols[j];
+        tr.appendChild(th);
+      }
+      tbl.appendChild(tr);
+      profLines.push(head + ":");
+      for (i = 0; i < prof.rows.length; i++) {
+        r = prof.rows[i];
+        tr = document.createElement("tr");
+        var cells = [r.label, fmt2(r.vt), fmt2(r.vw), fmt2(r.vc), fmt2(r.tot)];
+        for (j = 0; j < cells.length; j++) {
+          td = document.createElement("td");
+          td.textContent = cells[j];
+          tr.appendChild(td);
+        }
+        tbl.appendChild(tr);
+        profLines.push(r.label + ": combined " + fmt2(r.tot) + " (tidal " + fmt2(r.vt) +
+          ", wind-driven " + fmt2(r.vw) + ", background " + fmt2(r.vc) + ")");
+      }
+      box.appendChild(tbl);
+      var nb = [];
+      if (prof.vt0 !== null) {
+        nb.push("Tidal: spring peak of the depth mean scaled to the surface (8/7) and taken down the 1/7 power profile of 4.1.4.3" +
+          (prof.d ? " at " + Math.round(prof.d).toLocaleString() + " m water depth" : " (surface only: water depth unknown here)") + ".");
+      }
+      if (prof.vw0 !== null) {
+        nb.push("Wind-driven: 0.03 x the site's P90 10 m wind of " + prof.windP90.toFixed(1) +
+          " m/s, falling linearly to zero at 50 m (4.1.4.4); at the " + DNV_N001_WIND +
+          " m/s design wind of DNV-ST-N001 11.12.2.3 the surface value would be " +
+          (DNV_K_WIND * DNV_N001_WIND).toFixed(2) + " m/s.");
+      }
+      if (prof.hasSurfBg) {
+        nb.push("Background: the modelled (GLORYS) residual P90" +
+          (prof.hasBottom ? " at the surface and at the deepest modelled level, linear between and held below" : " at the surface, held through the column") +
+          "; it already contains the wind drift the model resolves, so the combined column is conservative near the surface.");
+      }
+      nb.push("Components are summed as if aligned. Climatological figures, not extreme-value design values.");
+      p = document.createElement("p");
+      p.className = "tm-prof-note";
+      p.textContent = nb.join(" ");
+      box.appendChild(p);
+      profLines.push(nb.join(" "));
+    }
+    state.lastCur = lines.length ? lines.concat(profLines) : null;
   }
 
   /* ---------- shareable URLs ----------
@@ -1175,7 +1324,10 @@
     var kv = {}, parts = raw.split("&"), i, p;
     for (i = 0; i < parts.length; i++) {
       p = parts[i].split("=");
-      if (p.length === 2) kv[decodeURIComponent(p[0])] = decodeURIComponent(p[1]);
+      if (p.length === 2) {
+        try { kv[decodeURIComponent(p[0])] = decodeURIComponent(p[1]); }
+        catch (e) { /* malformed percent-escape in a pasted link: skip that key */ }
+      }
     }
     if (!kv.loc) return null;
     var ll = kv.loc.split(",");
@@ -1340,11 +1492,15 @@
     });
     var bits = [];
     if (s.any) {
-      bits.push("an average season brings " +
-        (s.storms >= 10 ? Math.round(s.storms) : (Math.round(s.storms * 10) / 10)) +
-        " storm" + (s.storms === 1 ? "" : "s") + " inside " + cyc.radii[ri].toLocaleString() +
-        " nm during these months (" + (Math.round(s.days * 10) / 10) + " storm-day" +
-        (s.days === 1 ? "" : "s") + ")");
+      /* the per-month counts mark a storm once per month it is inside the
+         ring, so a sum over several months counts a boundary-straddling
+         storm in each: say storm-months unless the count is exact */
+      var nS = s.storms >= 10 ? Math.round(s.storms) : (Math.round(s.storms * 10) / 10);
+      bits.push("an average season brings " + nS +
+        (s.exact ? " storm" + (s.storms === 1 ? "" : "s") : " storm-month" + (s.storms === 1 ? "" : "s")) +
+        " inside " + cyc.radii[ri].toLocaleString() + " nm during these months (" +
+        (Math.round(s.days * 10) / 10) + " storm-day" + (s.days === 1 ? "" : "s") +
+        (s.exact ? "" : "; a storm spanning two months counts in each") + ")");
     } else {
       bits.push("no recorded storm inside " + cyc.radii[ri].toLocaleString() +
         " nm during these months");
@@ -1379,7 +1535,9 @@
   }
 
   function diSlotLabel(s) {
-    return ("0" + (s * 3)).slice(-2) + ":00-" + ("0" + ((s * 3 + 3) % 24)).slice(-2) + ":00";
+    /* the emitter's slot s holds local solar times in [3s-1.5, 3s+1.5),
+       i.e. centred on 3s:00, so the label names the centre hour */
+    return ("0" + (s * 3)).slice(-2) + ":00";
   }
 
   function renderDiurnalPanel(di, sel) {
@@ -1902,7 +2060,10 @@
     var tp;
     try {
       tp = new D.TileProvider(cfg.dataBase);
-      tp.ready.then(function () { boot(tp, tp.meta.source === "DEMO"); }).catch(useDemo);
+      /* two-argument then: only a FAILED manifest load falls back to the
+         demo; an exception inside boot() itself surfaces in the console
+         instead of silently booting a second, synthetic app on top */
+      tp.ready.then(function () { boot(tp, tp.meta.source === "DEMO"); }, useDemo);
     } catch (e) {
       useDemo();
     }

@@ -6,13 +6,16 @@ of the public site repo so a plain `curl` can reach them while GitHub Pages
 
 - `build_dataset_waverys.py` - the WAVERYS emitter
 - `era5_graft.partNN` - the ERA5 wind / diurnal-wind / ENSO graft
-  (seastate_accum.npz). REAL data only: mean-wind fields cover 1980-2024,
-  the direction rose / diurnal cycle / ENSO split cover 1980-2009 (the
-  2010-2024 half of those three families awaits the wind-variables rerun).
-  Replaced 2 Sep 26 - the first kit graft proved to be the synthetic
-  self-test stub (5 m/s everywhere) and must never ship. Reassemble with
+  (seastate_accum.npz). REAL data only. Since 4 Sep 26 EVERY wind family
+  covers 1980-2024: the 2010-2024 wind-variables rerun (release "wind")
+  was welded onto the 45-year record with tools/weld_wind_graft.py (mean
+  wind carried from the 45-year checkpoint, direction rose / diurnal cycle /
+  ENSO split summed 1980-2009 + 2010-2024; every family holds 11,160
+  January samples on an open-ocean cell, 45 years x 248). Reassemble with
   `cat era5_graft.part* > seastate_accum.npz`; whole-file sha256:
-  a2d0f1f0a670203c98afbd09f41a517423c011f23e1b7ee1604c228516abbde4
+  d715c903874672249d40c17f05dfe720e415ecd802e5fdef842a857d80867b9f
+  (the 2 Sep 26 graft, a2d0f1f0..., had the rose / diurnal / ENSO
+  families for 1980-2009 only; refresh.sh replaces it by checksum)
 - `cur_tiles.partNN` + `cur.sha256` - the currents tiles (too big for
   Pages), unzipped into data/cur on the host
 - `kit.sha256` - per-file checksums

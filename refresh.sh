@@ -60,7 +60,7 @@ SHA_WAVERYS_PY=5233789e7523da7a1d60d03b00641890e77aa078c3dd804392a37b8ad792ea1a
 
 # whole-file sha256 of the reassembled ERA5 graft (wav_work/seastate_accum.npz),
 # the same value the cloud-init and the kit README carry
-SHA_ERA5_GRAFT=a2d0f1f0a670203c98afbd09f41a517423c011f23e1b7ee1604c228516abbde4
+SHA_ERA5_GRAFT=d715c903874672249d40c17f05dfe720e415ecd802e5fdef842a857d80867b9f
 
 RAW=https://raw.githubusercontent.com/bnhly/seastate-temp/kit
 SITE_REPO=https://github.com/bnhly/seastate-temp

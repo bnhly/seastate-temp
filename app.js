@@ -305,6 +305,9 @@
       "Environmental Information (public domain).");
     if (state.assetsAttribution) parts.push(state.assetsAttribution);
     if (state.cycAttribution) parts.push(state.cycAttribution);
+    /* the currents layer's Copernicus Marine sentence was collected here
+       but never printed (found 4 Sep 26 while building the sources table) */
+    if (state.curAttribution) parts.push(state.curAttribution);
     return parts.join(" ");
   }
 
@@ -435,8 +438,118 @@
                          top: top, sourceLabel: jd.sourceLabel, period: jd.period };
   }
 
+  /* Sources table (Ben, 4 Sep 26): what the data is, who made it, how they
+     collected or produced it, and what we do with it, one row per layer.
+     The providers' licence sentences stay verbatim under the table because
+     Copernicus and ECMWF require their exact wording; the table is the
+     readable version, not a replacement. Rows for optional layers appear
+     once that layer's file has loaded. */
+  var OURS_WAVES = "Nearest grid cell, no interpolation. Share of time at or above each " +
+    "height from 0.25 m bins per calendar month, months combined by their length in days, " +
+    "extremes as the 99th and 99.9th percentile of the 3 hourly samples, calm spells " +
+    "tracked per cell for the weather windows.";
+
+  function sourceRows() {
+    var m = state.provider.meta || {}, src = String(m.source || "").toUpperCase();
+    var attr = String(m.attribution || "");
+    var rows = [];
+    if (src === "WAVERYS") {
+      rows.push(["Waves: significant height, peak period, direction",
+        "WAVERYS wave reanalysis, Mercator Ocean International via the Copernicus Marine Service (" + m.period + ")",
+        "MFWAM wave model reanalysis on a 0.2 degree grid, forced by ERA5 winds and GLORYS currents, " +
+        "assimilating satellite altimeter wave heights and Sentinel-1 SAR wave spectra. Buoys are used " +
+        "to validate it, not assimilated.",
+        OURS_WAVES]);
+    } else if (src === "ERA5") {
+      rows.push(["Waves: significant height, peak period, direction",
+        "ERA5 reanalysis, ECMWF via the Copernicus Climate Change Service (" + m.period + ")",
+        "Global wave model coupled to the ERA5 atmospheric reanalysis on a 0.5 degree grid, " +
+        "assimilating satellite altimeter wave heights. Buoys are used to validate it, not assimilated.",
+        OURS_WAVES]);
+    } else {
+      rows.push(["Waves", m.sourceLabel || "Demonstration data", "Synthetic climatology for the demonstration mode.", OURS_WAVES]);
+    }
+    if (src === "ERA5" || attr.indexOf("ERA5") >= 0) {
+      rows.push(["Wind at 10 m",
+        "ERA5 reanalysis, ECMWF via the Copernicus Climate Change Service",
+        "Atmospheric reanalysis that assimilates satellite radiances and winds, radiosondes, aircraft, " +
+        "ships, buoys and land stations; 3 hourly values on a 0.5 degree grid.",
+        "Monthly mean and top decile, direction rose in 12 sectors of 30 degrees, daily cycle by 3 hour " +
+        "slot of the local solar day, El Nino and La Nina split by NOAA ONI phase."]);
+    }
+    rows.push(["Water depth and contours",
+      "ETOPO 2022 Global Relief Model, NOAA NCEI; Natural Earth 1:10m bathymetry for the world-scale contours",
+      "Compiled bathymetry: ship soundings and multibeam surveys, gravity-derived depths from satellite " +
+      "altimetry, coastal lidar; 15 arc second grid.",
+      "Depth at the data point from a 0.1 degree block mean, fine contours chosen from the depths in view, " +
+      "depth bands at world scale; the depth the current profile and the tidal bottom-metre figure use."]);
+    rows.push(["Coastline",
+      "GSHHG (Wessel and Smith, 1996) at close zoom, Natural Earth 1:50m land at world scale",
+      "Digitised shorelines from the World Vector Shoreline and World Data Bank II, made hierarchical and self consistent.",
+      "Map drawing at every zoom and the land test that cuts pipelines to their offshore runs."]);
+    if (state.curAttribution) {
+      rows.push(["Tidal streams",
+        "Copernicus Marine global hourly merged surface currents, barotropic tidal component",
+        "Global tide model solution constrained by satellite altimetry and tide gauges, hourly on a 1/12 degree grid.",
+        "Harmonic analysis of 90 days with six constituents and nodal factors; springs and neaps from a 35 day " +
+        "reconstruction; slack and turn statistics; surface and bottom-metre values through the 1/7 power " +
+        "profile of DNVGL-RP-C205."]);
+      rows.push(["Background currents",
+        "GLORYS12 ocean reanalysis, Mercator Ocean International via the Copernicus Marine Service",
+        "1/12 degree ocean model reanalysis assimilating satellite sea level and sea surface temperature, sea ice, " +
+        "and in situ temperature and salinity profiles from Argo floats, moorings and ships; daily means at six depths.",
+        "Median and top decile speed per month at the surface and at the deepest modelled level that is wet; " +
+        "the circulation term of the combined current profile."]);
+    }
+    if (state.cycAttribution) {
+      rows.push(["Tropical cyclones",
+        "IBTrACS v04 best tracks, NOAA NCEI, satellite era",
+        "Agency best tracks compiled from satellite imagery, aircraft reconnaissance, radar and surface " +
+        "observations, with positions and winds every 6 hours.",
+        "Storm months and storm days inside fixed rings of the point, the strongest category on record " +
+        "inside each ring, and the track drawing on the map."]);
+    }
+    if (state.assetsAttribution) {
+      rows.push(["Oil and gas assets",
+        "Regulator registers (BSEE and BOEM, Norwegian Offshore Directorate, Geoscience Australia, ANP and " +
+        "others), Global Energy Monitor trackers, OpenStreetMap",
+        "Operator filings and surveyed positions held by the regulators; public records compiled by the " +
+        "trackers; volunteer mapping from imagery and surveys in OpenStreetMap.",
+        "Merged with regulator records winning, wells and platforms collapsed per 2 km cell, pipelines " +
+        "deduplicated within their corridor and cut to offshore runs; the in-service filter reads each " +
+        "register's own status words."]);
+    }
+    return rows;
+  }
+
+  function renderSourcesTable() {
+    var box = $("tm-sources-table");
+    if (!box) return;
+    var rows = sourceRows(), tbl = document.createElement("table"), tr, th, td, i, j;
+    tbl.className = "tm-src";
+    tr = document.createElement("tr");
+    ["Data", "Source", "How it is collected or produced", "How we use it"].forEach(function (hd) {
+      th = document.createElement("th");
+      th.textContent = hd;
+      tr.appendChild(th);
+    });
+    tbl.appendChild(tr);
+    for (i = 0; i < rows.length; i++) {
+      tr = document.createElement("tr");
+      for (j = 0; j < rows[i].length; j++) {
+        td = document.createElement("td");
+        td.textContent = rows[i][j];
+        tr.appendChild(td);
+      }
+      tbl.appendChild(tr);
+    }
+    box.innerHTML = "";
+    box.appendChild(tbl);
+  }
+
   function updateAttribution() {
     $("tm-attribution").textContent = allSources();
+    renderSourcesTable();
   }
 
   function assetsHaveWells() {

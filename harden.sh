@@ -310,9 +310,21 @@ if ! systemctl reload nginx; then
 fi
 
 # ---- 6. self check against the live server -------------------------------
+# A reload is asynchronous: the old workers keep answering on the shared
+# sockets for a moment while the new ones start, so a probe fired straight
+# after the reload can be served by the OLD config (Ben's first run, 4 Sep
+# 26: the tile came back 200 with the gate written and tested). Wait until a
+# header-less tile request is refused, up to 15 s, before judging anything.
 code() { curl -s -o /dev/null -m 5 -w '%{http_code}' "$@"; }
 [ -f "$WEB/status.txt" ] || status "harden.sh running..."
 tile=$(ls "$WEB/data" 2>/dev/null | grep '^t_.*\.json$' | head -1)
+if [ -n "$tile" ]; then
+  waited=0
+  until [ "$(code "http://127.0.0.1/data/$tile")" = 403 ] || [ $waited -ge 15 ]; do
+    sleep 1; waited=$((waited + 1))
+  done
+  echo "new workers answering after ${waited}s"
+fi
 echo "self check on 127.0.0.1:"
 echo "  /data/manifest.json without headers  -> $(code http://127.0.0.1/data/manifest.json)   (want 200)"
 echo "  /status.txt without headers          -> $(code http://127.0.0.1/status.txt)   (want 200)"
@@ -324,13 +336,21 @@ if [ -n "$tile" ]; then
   echo "  same with Referer https://www.thrustm.com/x -> $(code -H 'Referer: https://www.thrustm.com/x' "http://127.0.0.1/data/$tile")   (want 200)"
   acao=$(curl -s -m 5 -D - -o /dev/null -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile" | grep -i '^access-control-allow-origin' | tr -d '\r')
   echo "  CORS header on the allowed request   -> ${acao:-MISSING}"
-  n429=0; n200=0
-  for i in $(seq 1 120); do
-    c=$(code -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
-    [ "$c" = 429 ] && n429=$((n429 + 1))
-    [ "$c" = 200 ] && n200=$((n200 + 1))
-  done
-  echo "  rate limit smoke: 120 back-to-back requests -> $n200 x 200, $n429 x 429 (429s expected once the burst of 80 is used up)"
+  # 160 requests fired 20 at a time: sequential curls run at roughly the
+  # allowed rate and never trip the limit, which proves nothing
+  codes=$(seq 1 160 | xargs -P 20 -I{} curl -s -o /dev/null -m 5 -w '%{http_code}\n' -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
+  n200=$(echo "$codes" | grep -c '^200$' || true)
+  n429=$(echo "$codes" | grep -c '^429$' || true)
+  echo "  rate limit smoke: 160 requests, 20 in parallel -> $n200 x 200, $n429 x 429 (some 429s expected once the burst of 80 is used up)"
+  gate_no=$(code "http://127.0.0.1/data/$tile")
+  gate_ok=$(code -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
+  if [ "$gate_no" = 403 ] && [ "$gate_ok" = 200 ] && [ "$n429" -gt 0 ]; then
+    echo "  VERDICT: GATE ACTIVE, RATE LIMIT ACTIVE"
+  elif [ "$gate_no" = 403 ] && [ "$gate_ok" = 200 ]; then
+    echo "  VERDICT: GATE ACTIVE, rate limit not triggered by this probe (tell Claude the two counts above)"
+  else
+    echo "  VERDICT: GATE NOT ACTIVE (no headers -> $gate_no, allowed origin -> $gate_ok). Run harden.sh once more; if it says the same, tell Claude."
+  fi
 else
   echo "  (no t_*.json tile in $WEB/data yet, gate check skipped)"
 fi

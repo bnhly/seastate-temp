@@ -19,8 +19,9 @@
 # WHAT IT DOES, in order
 #   1/5 site repo   git pull (or a fresh shallow clone: the first build removed
 #                   its clone) of bnhly/seastate-temp into /root/seastate/site,
-#                   then copy data/ and coast/ over webdata. Copies OVER, never
-#                   rm -rf. The wave-tile family (manifest.json, meanhs.json,
+#                   then copy data/, coast/ and the page files (html, js, css,
+#                   vendor/, locations/, assets/) over webdata. Copies OVER,
+#                   never rm -rf on data. The wave-tile family (manifest.json, meanhs.json,
 #                   t_*.json at the top of data/) is deliberately NOT copied: on
 #                   the site those are the old ERA5 tiles, on this host they are
 #                   the WAVERYS ones, and copying the ERA5 set over them would
@@ -157,7 +158,18 @@ for d in "$SITE"/data/*/; do
   NCOPY=$((NCOPY + 1))
 done
 cp -rp "$SITE/coast/." "$WEB/coast/" || fail "copy coast"
-echo "1/5 copied $NCOPY entries from site/data plus coast/ (site at $(git -C "$SITE" rev-parse --short HEAD))"
+# the page files too (what preview.sh copies), so a refresh alone leaves the
+# team preview current: html, js, css, the vendored pdf-lib, the location
+# pages and the asset layer. robots.txt stays the host's own Disallow-all.
+cp -p "$SITE"/*.html "$SITE"/*.js "$SITE"/*.css "$WEB/" || fail "copy page files"
+cp -p "$SITE/og-image.png" "$WEB/" 2>/dev/null || true
+for d in assets vendor locations; do
+  if [ -d "$SITE/$d" ]; then
+    rm -rf "$WEB/$d"
+    cp -rp "$SITE/$d" "$WEB/" || fail "copy $d"
+  fi
+done
+echo "1/5 copied $NCOPY entries from site/data plus coast/ and the page files (site at $(git -C "$SITE" rev-parse --short HEAD))"
 
 # ---- 2/5: currents tiles from the kit -------------------------------------
 STEP="2/5 currents"

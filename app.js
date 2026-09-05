@@ -688,23 +688,27 @@
 
     /* location + basis lines */
     $("tm-loc").textContent = "Location " + D.fmtLatLon(state.selected.lat, state.selected.lon);
+    /* the source, period and sample count left this line on 4 Sep 26 (Ben):
+       they live in the footer's sources table and in the PDF's data basis */
     var basis = "Data point " + D.fmtLatLon(res.cell.lat, res.cell.lon) +
-      " (" + res.cell.res + "\u00B0 grid), " + res.distanceKm + " km from your click \u00B7 " +
-      state.provider.meta.sourceLabel + ", " + state.provider.meta.period;
-    if (combined.nTotal > 0) basis += " \u00B7 " + combined.nTotal.toLocaleString() + " samples";
+      " (" + res.cell.res + "\u00B0 grid), " + res.distanceKm + " km from your click";
     $("tm-basis").textContent = basis;
 
     /* depth + nearest asset context line: exact ETOPO depth when deployed,
        Natural Earth band as the fallback */
     var ctxParts = [];
     var cellKey = res.cell.lat + "," + res.cell.lon;
-    var depthTxt = null;
+    /* depthTxt is what the page shows (no source tag, Ben 4 Sep 26: the
+       sources table names it); depthTxtFull keeps the source for the PDF,
+       which has to stand on its own */
+    var depthTxt = null, depthTxtFull = null;
     if (state.depthExact && state.depthExact.key === cellKey) {
       if (state.depthExact.val) {
-        /* trim any trailing parenthetical so the inline mention does not nest
+        /* trim any trailing parenthetical so the PDF mention does not nest
            brackets; the footer attribution keeps the full wording */
         var dsl = state.depthExact.val.sourceLabel.replace(/\s*\([^)]*\)\s*$/, "");
-        depthTxt = "about " + state.depthExact.val.m.toLocaleString() + " m (" + dsl + ")";
+        depthTxt = "about " + state.depthExact.val.m.toLocaleString() + " m";
+        depthTxtFull = depthTxt + " (" + dsl + ")";
       }
     } else if (cfg.dataBase !== null) {
       state.depthExact = { key: cellKey, val: null };
@@ -720,15 +724,15 @@
     if (!depthTxt) {
       var band = D.depthBandAt(res.cell.lat, res.cell.lon);
       if (band) {
-        depthTxt = (band.label.indexOf(" to ") > 0 ? "roughly " : "") + band.label +
-          " (Natural Earth bathymetry)";
+        depthTxt = (band.label.indexOf(" to ") > 0 ? "roughly " : "") + band.label;
+        depthTxtFull = depthTxt + " (Natural Earth bathymetry)";
       } else if (!state.bathyFailed) {
         ensureBathy().then(function () {
           if (state.cellData) renderResults();
         }).catch(function () { state.bathyFailed = true; });
       }
     }
-    state.lastDepth = depthTxt;
+    state.lastDepth = depthTxtFull;
     if (depthTxt) ctxParts.push("Water depth at data point: " + depthTxt);
     state.lastNearest = null;
     if (state.assetsData) {

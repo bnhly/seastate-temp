@@ -48,6 +48,31 @@
   }
   var MERC_Y_MAX = mercY(MERC_LAT_MAX);
 
+  /* Register status words as people read them. The grabs cut statuses at
+     24 characters, so Geoscience Australia's "fully capable of operation"
+     reached the hover as "fully capable of operati" (Ben, 5 Sep 26); the
+     other entries are register jargon worth a plain word. Display only:
+     the in-service filter keeps reading the raw value. */
+  var STATUS_WORDS = {
+    "fully capable of operati": "operating",
+    "fully capable of operation": "operating",
+    "proposed infrastructure": "proposed",
+    "stratigraphic investigat": "stratigraphic investigation",
+    "re-class to dev": "reclassified to development",
+    "p&a": "plugged and abandoned",
+    "paa": "plugged and abandoned",
+    "in-development": "in development",
+    "construction": "under construction",
+    "waterwaste": "waste water",
+    "catalytic_rich_gas": "catalytic rich gas",
+    "natural_gas": "natural gas"
+  };
+  function statusLabel(s) {
+    if (!s) return "";
+    var k = String(s).trim().toLowerCase();
+    return STATUS_WORDS[k] || k;
+  }
+
   /* Squared distance from a point to a segment, plus the closest point on
      it. Squared because nothing here needs the root, and hover runs this
      over every segment of every candidate line on each mouse move. */
@@ -132,7 +157,7 @@
     var head = named ? ln.n : (ln.o || "Pipeline");
     var bits = [];
     if (named && ln.o) bits.push(ln.o);
-    if (ln.s) bits.push(ln.s);
+    if (ln.s) bits.push(statusLabel(ln.s));
     if (ln.c) bits.push(ln.c);
     var sub = bits.join(" \u00B7 ");
     return [head, "Pipeline" + (sub ? ", " + sub : ""),
@@ -836,8 +861,12 @@
       }
       if (this.assetsOn && this.linesOn !== false && this.assetLinesPath &&
           view.scale >= PIPE_MIN_SCALE) {
-        ctx.strokeStyle = "rgba(194, 87, 31, 0.7)";
-        ctx.lineWidth = 1.4 / view.scale;
+        /* 0.85 / 1.6 px since the register dedupe (5 Sep 26): each route
+           used to be two or three stacked 0.7 strokes from the duplicate
+           layers, which read as a bolder line; a single stroke at 0.7
+           looked thin and washed out by comparison */
+        ctx.strokeStyle = "rgba(194, 87, 31, 0.85)";
+        ctx.lineWidth = 1.6 / view.scale;
         ctx.stroke(this.assetLinesPath);
       }
       if (this.cycTracksOn && this.cycMinorPath) {
@@ -964,7 +993,7 @@
         if (aa.y) l3parts.push(String(aa.y));
         if (aa.o) l3parts.push(aa.o);
         drawTip(ctx, cssW, ax, ay, aa.n,
-          (aa.t || "asset") + (aa.s ? ", " + aa.s : "") + (aa.c ? " \u00B7 " + aa.c : ""),
+          (aa.t || "asset") + (aa.s ? ", " + statusLabel(aa.s) : "") + (aa.c ? " \u00B7 " + aa.c : ""),
           l3parts.join(" \u00B7 "));
       }
 

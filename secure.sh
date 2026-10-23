@@ -27,7 +27,7 @@ echo "=== secure.sh $(date -u) ==="
 
 echo "1/4 automatic updates"
 $APT update >/dev/null
-$APT install unattended-upgrades update-notifier-common >/dev/null
+$APT install unattended-upgrades >/dev/null
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'CONF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
@@ -56,6 +56,21 @@ if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else rm -f /etc/nginx/
 echo "4/4 what this server listens on (should be nginx on 80 and 443, plus ssh on 22)"
 ss -tlnH 2>/dev/null | awk '{print "    " $4}' | sort -u
 
+echo
+echo "CHECKS"
+ok=1
+chk() { if [ "$2" = 1 ]; then echo "    PASS  $1"; else echo "    FAIL  $1"; ok=0; fi; }
+dpkg -s unattended-upgrades >/dev/null 2>&1; chk "unattended-upgrades installed" $([ $? = 0 ] && echo 1 || echo 0)
+chk "unattended-upgrades service enabled" $([ "$(systemctl is-enabled unattended-upgrades 2>/dev/null)" = enabled ] && echo 1 || echo 0)
+chk "daily update timer active" $([ "$(systemctl is-active apt-daily-upgrade.timer 2>/dev/null)" = active ] && echo 1 || echo 0)
+chk "updates set to install daily" $(apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"' && echo 1 || echo 0)
+chk "automatic restart at 16:00" $(apt-config dump 2>/dev/null | grep -q 'Automatic-Reboot-Time "16:00"' && echo 1 || echo 0)
+chk "server clock on UTC" $([ "$(date +%Z)" = UTC ] && echo 1 || echo 0)
+chk "nginx running" $([ "$(systemctl is-active nginx 2>/dev/null)" = active ] && echo 1 || echo 0)
+chk "certificate renewal timer active" $([ "$(systemctl is-active certbot.timer 2>/dev/null)" = active ] && echo 1 || echo 0)
+SEC=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst .*-security')
+chk "no security updates waiting ($SEC)" $([ "$SEC" = 0 ] && echo 1 || echo 0)
+if [ "$ok" = 1 ]; then echo "SECURE CHECK: ALL PASS"; else echo "SECURE CHECK: SOMETHING FAILED (tell Claude which line)"; fi
 echo
 if [ -f /var/run/reboot-required ]; then
   echo "SECURE DONE. A restart is needed for the updates; it will happen by itself at 16:00 UTC."

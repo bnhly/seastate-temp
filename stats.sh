@@ -297,6 +297,19 @@ def health():
             out["cert_days"] = (end - datetime.datetime.utcnow()).days
         except Exception:
             pass
+    # patching (secure.sh turns on automatic updates)
+    out["reboot_required"] = os.path.exists("/var/run/reboot-required")
+    out["updates_last_run"] = None
+    for lp in ("/var/log/unattended-upgrades/unattended-upgrades.log",):
+        if os.path.exists(lp):
+            out["updates_last_run"] = datetime.datetime.utcfromtimestamp(os.path.getmtime(lp)).strftime("%Y-%m-%d")
+    out["security_pending"] = None
+    try:
+        s = subprocess.run(["apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"],
+                           capture_output=True, text=True, timeout=120).stdout
+        out["security_pending"] = sum(1 for l in s.splitlines() if l.startswith("Inst ") and "-security" in l)
+    except Exception:
+        pass
     return out
 
 
@@ -356,6 +369,11 @@ def main():
     h = health()
     if h.get("disk_pct") is not None and h["disk_pct"] >= DISK_PCT:
         alerts.append("Data host disk is %s%% full." % h["disk_pct"])
+    if h.get("updates_last_run"):
+        age = (today - datetime.date.fromisoformat(h["updates_last_run"])).days
+        if age > 7 and (h.get("security_pending") or 0) > 0:
+            alerts.append("Automatic updates have not run for %d days and %d security updates are waiting. "
+                          "Run secure.sh on the data host." % (age, h["security_pending"]))
     if h.get("cert_days") is not None and h["cert_days"] < CERT_DAYS:
         alerts.append("The https certificate expires in %d days and should have renewed by now." % h["cert_days"])
 

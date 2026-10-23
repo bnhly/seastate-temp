@@ -518,7 +518,7 @@
             if (state.tpModeLabel) snap.push(state.tpModeLabel);
             if (state.windowsLabel) snap.push(state.windowsLabel);
             if (state.daylightLabel) snap.push(state.daylightLabel);
-            if (state.diurnalLabel) snap.push(state.diurnalLabel);
+            if (state.diurnalLabel) snap.push("Daily cycle " + state.diurnalLabel.charAt(0).toLowerCase() + state.diurnalLabel.slice(1));
             if (state.cycLabel) snap.push(state.cycLabel);
             if (state.ensoLabel) snap.push("El Nino vs La Nina: " + state.ensoLabel);
             if (state.curLines) snap = snap.concat(state.curLines);

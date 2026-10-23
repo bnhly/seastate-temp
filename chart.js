@@ -595,52 +595,62 @@
     txt(svg, m.l + iw / 2, H - 8, "Calendar month", { "text-anchor": "middle", fill: C.ink2, "font-size": 11.5 });
   }
 
-  /* Across the day: mean Hs and mean wind by 3 h local-solar slot, two mini
-     panels in one figure. spec: {hs:[8 m|null], wind:[8 m/s|null]} */
+  /* Across the day: mean wind (top) and mean Hs (bottom) by 3 h local-solar
+     slot, stacked on ONE shared hour axis so the timing of the two reads
+     straight down (wind leads, waves follow). Each row keeps its own units
+     and scale; no dual y-axis. spec: {hs:[8 m|null], wind:[8 m/s|null],
+     nightRise, nightSet} */
   function renderDiurnal(container, spec) {
     container.innerHTML = "";
-    var W = drawW(container, 660), H = 240;
+    var rows = [];
+    if (spec.wind) rows.push({ vals: spec.wind, label: "Mean wind (m/s)", fmt: function (v) { return v.toFixed(1) + " m/s"; }, name: "Wind" });
+    if (spec.hs) rows.push({ vals: spec.hs, label: "Mean Hs (m)", fmt: function (v) { return v.toFixed(2) + " m"; }, name: "Hs" });
+    rows = rows.filter(function (r) {
+      for (var k = 0; k < 8; k++) if (r.vals[k] !== null) return true;
+      return false;
+    });
+    if (!rows.length) return;
+    var W = drawW(container, 660);
+    var rowH = rows.length > 1 ? 112 : 160, gap = 30;
+    var m = { l: 50, r: 16, t: 22, b: 40 };
+    var H = m.t + rows.length * rowH + (rows.length - 1) * gap + m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-      "aria-label": "Mean wave height and wind speed by three hour slot of the local solar day" });
+      "aria-label": "Mean wind speed and wave height by three hour slot of the local solar day, on a shared time axis" });
     container.appendChild(svg);
-    var panels = [];
-    if (spec.hs) panels.push({ vals: spec.hs, label: "Mean Hs (m)", fmt: function (v) { return v.toFixed(2) + " m"; } });
-    if (spec.wind) panels.push({ vals: spec.wind, label: "Mean wind (m/s)", fmt: function (v) { return v.toFixed(1) + " m/s"; } });
-    if (!panels.length) return;
-    var pw = W / panels.length;
-    panels.forEach(function (p, pi) {
-      var m = { l: 46 + pi * pw, r: (pi + 1) * pw === W ? 12 : 18, t: 24, b: 34 };
-      var x0 = 46 + pi * pw, iw = pw - 58;
-      var ih = H - m.t - m.b;
-      var lo = null, hi = null, i;
+    var x0 = m.l, iw = W - m.l - m.r, i;
+    /* slot idx is centred on local solar hour 3*idx (the emitter rounds to
+       the nearest slot), so it sits at XH(3*idx) on the same hour axis the
+       night shading uses; slot 0 (23:30-01:30) is drawn at midnight on the
+       left edge */
+    function XH(h) { return x0 + iw * (h / 24); }
+    function X(idx) { return XH(3 * idx); }
+    var yTop = m.t, yBot = m.t + rows.length * rowH + (rows.length - 1) * gap;
+    var night = spec.nightRise !== null && spec.nightRise !== undefined && spec.nightRise > 0;
+
+    rows.forEach(function (p, ri) {
+      var top = m.t + ri * (rowH + gap), ih = rowH;
+      var lo = null, hi = null;
       for (i = 0; i < 8; i++) {
         var v0 = p.vals[i];
         if (v0 === null) continue;
         if (lo === null || v0 < lo) lo = v0;
         if (hi === null || v0 > hi) hi = v0;
       }
-      if (lo === null) return;
       var pad = Math.max((hi - lo) * 0.25, hi * 0.02, 0.05);
       var yMin = Math.max(0, lo - pad), yMax = hi + pad;
-      function Y(v) { return m.t + (1 - (v - yMin) / (yMax - yMin)) * ih; }
-      /* slot idx is centred on local solar hour 3*idx (the emitter rounds
-         to the nearest slot), so it sits at XH(3*idx) on the same hour axis
-         the night shading uses; slot 0 (23:30-01:30) is drawn at midnight
-         on the left edge */
-      function XH(h) { return x0 + iw * (h / 24); }
-      function X(idx) { return XH(3 * idx); }
-      /* night shading behind everything else */
-      if (spec.nightRise !== null && spec.nightRise !== undefined && spec.nightRise > 0) {
-        el("rect", { x: x0, y: m.t, width: XH(spec.nightRise) - x0, height: ih,
+      function Y(v) { return top + (1 - (v - yMin) / (yMax - yMin)) * ih; }
+      /* night shading, one band per row so it runs down through both */
+      if (night) {
+        el("rect", { x: x0, y: top, width: XH(spec.nightRise) - x0, height: ih,
           fill: C.ink, "fill-opacity": 0.05 }, svg);
-        el("rect", { x: XH(spec.nightSet), y: m.t, width: x0 + iw - XH(spec.nightSet),
+        el("rect", { x: XH(spec.nightSet), y: top, width: x0 + iw - XH(spec.nightSet),
           height: ih, fill: C.ink, "fill-opacity": 0.05 }, svg);
       }
       var g;
       for (g = 0; g <= 3; g++) {
         var gv = yMin + (yMax - yMin) * g / 3;
         el("line", { x1: x0, x2: x0 + iw, y1: Y(gv), y2: Y(gv), stroke: g === 0 ? C.baseline : C.grid, "stroke-width": 1 }, svg);
-        txt(svg, x0 - 6, Y(gv) + 3.5, gv >= 10 ? gv.toFixed(0) : gv.toFixed(1),
+        txt(svg, x0 - 6, Y(gv) + 3.5, gv >= 10 ? gv.toFixed(0) : (p.name === "Hs" && yMax - yMin < 0.6 ? gv.toFixed(2) : gv.toFixed(1)),
           { "text-anchor": "end", fill: C.muted, "font-size": 10.5 });
       }
       var d = "", started = false;
@@ -649,6 +659,10 @@
         d += (started ? " L " : "M ") + X(i).toFixed(1) + " " + Y(p.vals[i]).toFixed(1);
         started = true;
       }
+      /* the day wraps: midnight's slot closes the line at 24:00 */
+      if (started && p.vals[7] !== null && p.vals[0] !== null) {
+        d += " L " + XH(24).toFixed(1) + " " + Y(p.vals[0]).toFixed(1);
+      }
       el("path", { d: d, fill: "none", stroke: C.series, "stroke-width": 2,
         "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-opacity": 0.85 }, svg);
       for (i = 0; i < 8; i++) {
@@ -656,28 +670,46 @@
           el("circle", { cx: X(i), cy: Y(p.vals[i]), r: 3.5, fill: C.series,
             stroke: C.surface, "stroke-width": 2 }, svg);
         }
-        if (i % 2 === 0) {
-          txt(svg, X(i), m.t + ih + 14, ("0" + (i * 3)).slice(-2) + ":00",
-            { "text-anchor": "middle", fill: C.muted, "font-size": 10 });
-        }
-        (function (idx) {
-          var hit = el("rect", { x: Math.max(x0, X(idx) - iw / 16), y: m.t,
-            width: idx === 0 ? iw / 16 : iw / 8, height: ih, fill: "transparent" }, svg);
-          hit.addEventListener("mousemove", function (ev) {
-            var hc = idx * 3;
-            var hA = ("0" + Math.floor((hc - 1.5 + 24) % 24)).slice(-2) + ":30";
-            var hB = ("0" + Math.floor(hc + 1.5)).slice(-2) + ":30";
-            tip(true, ev.clientX, ev.clientY,
-              "around " + ("0" + hc).slice(-2) + ":00 local solar (" + hA + " to " + hB + "): " +
-              (p.vals[idx] === null ? "no data" : "<b>" + p.fmt(p.vals[idx]) + "</b>"));
-          });
-          hit.addEventListener("mouseleave", function () { tip(false); });
-        })(i);
       }
-      txt(svg, x0 + iw / 2, 14, p.label, { "text-anchor": "middle", fill: C.ink2,
+      txt(svg, x0, top - 7, p.label, { "text-anchor": "start", fill: C.ink2,
         "font-size": 11.5, "font-weight": "600" });
-      txt(svg, x0 + iw / 2, H - 6, "Local solar time", { "text-anchor": "middle", fill: C.muted, "font-size": 10.5 });
     });
+
+    /* one hour axis along the bottom */
+    for (i = 0; i < 8; i += 2) {
+      txt(svg, X(i), yBot + 15, ("0" + (i * 3)).slice(-2) + ":00",
+        { "text-anchor": "middle", fill: C.muted, "font-size": 10 });
+    }
+    txt(svg, x0 + iw, yBot + 15, "24:00", { "text-anchor": "middle", fill: C.muted, "font-size": 10 });
+    txt(svg, x0 + iw / 2, H - 6, "Local solar time" + (night ? " (shaded: night)" : ""),
+      { "text-anchor": "middle", fill: C.muted, "font-size": 10.5 });
+
+    /* shared hover: a guide down both rows, both values in one tip */
+    var guide = el("line", { x1: 0, x2: 0, y1: yTop, y2: yBot, stroke: C.ink2,
+      "stroke-width": 1, "stroke-dasharray": "3 3", visibility: "hidden" }, svg);
+    for (i = 0; i < 8; i++) {
+      (function (idx) {
+        var hit = el("rect", { x: Math.max(x0, X(idx) - iw / 16), y: yTop,
+          width: idx === 0 ? iw / 16 : iw / 8, height: yBot - yTop, fill: "transparent" }, svg);
+        hit.addEventListener("mousemove", function (ev) {
+          var hc = idx * 3;
+          var hA = ("0" + Math.floor((hc - 1.5 + 24) % 24)).slice(-2) + ":30";
+          var hB = ("0" + Math.floor(hc + 1.5)).slice(-2) + ":30";
+          guide.setAttribute("x1", X(idx));
+          guide.setAttribute("x2", X(idx));
+          guide.setAttribute("visibility", "visible");
+          tip(true, ev.clientX, ev.clientY,
+            "around " + ("0" + hc).slice(-2) + ":00 local solar (" + hA + " to " + hB + ")" +
+            rows.map(function (p) {
+              return "<br>" + p.name + ": " + (p.vals[idx] === null ? "no data" : "<b>" + p.fmt(p.vals[idx]) + "</b>");
+            }).join(""));
+        });
+        hit.addEventListener("mouseleave", function () {
+          guide.setAttribute("visibility", "hidden");
+          tip(false);
+        });
+      })(i);
+    }
   }
 
   /* Readable text at any card width (23 Oct 26, Ben: "some feel too

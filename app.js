@@ -1442,11 +1442,9 @@
       }
     }
     var i, p;
-    for (i = 0; i < lines.length; i++) {
-      p = document.createElement("p");
-      p.textContent = lines[i];
-      box.appendChild(p);
-    }
+    /* the web panel reads as tables, not prose (23 Oct 26, Ben: "way too
+       much text"); the prose lines above still feed the PDF */
+    curWebTables(box, cs, depthM);
     /* DNVGL-RP-C205 profile table; the PDF draws it as a table from
        state.lastCurProfile rather than as prose lines (seven extra lines
        pushed the report's last page into its footer, 3 Sep 26) */
@@ -1459,9 +1457,9 @@
       if (prof.hasSurfBg) parts.push("P90 background");
       var head = "Through the water column (DNVGL-RP-C205 4.1.4.3 combination, " + parts.join(" + ") + "), m/s";
       var tbl = document.createElement("table"), tr, th, td, j, r, cols;
-      tbl.className = "tm-prof";
+      tbl.className = "tm-cur-tbl";
       var cap = document.createElement("caption");
-      cap.textContent = head;
+      cap.textContent = "Combined current through the water column (m/s)";
       tbl.appendChild(cap);
       tr = document.createElement("tr");
       cols = ["Depth", "Tidal", "Wind-driven", "Background", "Combined"];
@@ -1500,10 +1498,7 @@
           "; it already contains the wind drift the model resolves, so the combined column is conservative near the surface.");
       }
       nb.push("The code takes the vector sum (4.1.3.3); the components are summed here as if aligned. Climatological figures, not extreme-value design values.");
-      p = document.createElement("p");
-      p.className = "tm-prof-note";
-      p.textContent = nb.join(" ");
-      box.appendChild(p);
+      curHowTo(box, [head + "."].concat(nb));
       state.lastCurProfile = {
         head: head,
         rows: prof.rows.map(function (rr) {
@@ -1517,7 +1512,117 @@
           "Summed as if aligned (the code takes the vector sum, 4.1.3.3). Climatology, not design values."
       };
     }
+    if (!prof || !prof.rows.length) curHowTo(box, []);
     state.lastCur = lines.length ? lines : null;
+  }
+
+  /* one plain sentence, then small tables: tidal stream (springs / neaps,
+     surface / seabed), slack and tide type, background current */
+  function curWebTables(box, cs, depthM) {
+    function mk(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+    function spd(td, v) {
+      if (v === null || v === undefined) { td.textContent = "\u2013"; return; }
+      td.appendChild(mk("b", "", v.toFixed(2).replace(/0$/, "") + " m/s"));
+      td.appendChild(mk("span", "tm-kn", (v * 1.94384).toFixed(1) + " kn"));
+    }
+    function table(caption, cols, rows) {
+      var t = mk("table", "tm-cur-tbl"), tr = mk("tr"), j, k, td;
+      t.appendChild(mk("caption", "", caption));
+      for (j = 0; j < cols.length; j++) tr.appendChild(mk("th", "", cols[j]));
+      t.appendChild(tr);
+      for (k = 0; k < rows.length; k++) {
+        tr = mk("tr");
+        tr.appendChild(mk("td", "", rows[k][0]));
+        for (j = 1; j < rows[k].length; j++) {
+          td = mk("td");
+          if (typeof rows[k][j] === "string") {
+            td.textContent = rows[k][j];
+            td.className = "tm-cur-txt";
+            if (rows[k][j + 1] === "") { td.colSpan = 2; j++; }
+          }
+          else spd(td, rows[k][j]);
+          tr.appendChild(td);
+        }
+        t.appendChild(tr);
+      }
+      box.appendChild(t);
+    }
+    var t = cs.tide, b = cs.bg, sf = 8 / 7, head = null, facts = [];
+    if (t && t.spring !== null) {
+      var sS = t.spring * sf, sN = t.neap !== null ? t.neap * sf : null;
+      var bf = (depthM && depthM > 2) ? sf * Math.pow(1 / depthM, 1 / 7) : null;
+      var slack = null;
+      if (sS > 0.5) {
+        if (t.slack50 === 0) slack = "None: the stream turns without stopping";
+        else if (sN !== null && sN > 0.5 && t.slack50 !== null && t.slack50 < 999) {
+          slack = "About " + Math.round(t.slack50) + " min below 1 kn at each turn" +
+            (t.perDay !== null && t.perDay >= 1 ? ", " + Math.round(t.perDay) + " times a day" : "");
+        } else if (sN !== null && sN <= 0.5) slack = "Long spells at neaps, short at springs";
+      }
+      head = sS > 0.5
+        ? "Tidal stream up to " + fmtSpeed(sS) + " at springs" +
+          (slack && slack.indexOf("About") === 0 ? ", with about " + Math.round(t.slack50) + " min of slack at each turn." : ".")
+        : "Weak tide: under 0.5 m/s (1 kn) even at springs.";
+      table("Tidal stream, typical peak", ["", "Springs", "Neaps"], [
+        ["Surface", sS, sN],
+        bf !== null
+          ? ["Near seabed (~" + Math.round(depthM).toLocaleString() + " m)", t.spring * bf, t.neap !== null ? t.neap * bf : null]
+          : ["Near seabed", "about 2/3 of surface", ""]
+      ]);
+      if (slack) facts.push(["Slack water", slack]);
+      if (t.form !== null) {
+        facts.push(["Tide type", t.form < 0.25 ? "Semidiurnal, peaks about every 6.2 h"
+          : t.form <= 1.5 ? "Mixed, mainly semidiurnal, peaks about every 6 h"
+          : t.form <= 3 ? "Mixed, mainly diurnal, one strong and one weak peak a day"
+          : "Diurnal, peaks about every 12.4 h"]);
+      }
+    }
+    if (facts.length) {
+      var dl = mk("dl", "tm-cur-facts"), f;
+      for (f = 0; f < facts.length; f++) {
+        dl.appendChild(mk("dt", "", facts[f][0]));
+        dl.appendChild(mk("dd", "", facts[f][1]));
+      }
+      box.appendChild(dl);
+    }
+    if (b) {
+      var rows = [];
+      if (b.surfP50 !== null) rows.push(["Surface", b.surfP50, b.surfP90]);
+      if (b.botP50 !== null && b.botDepth !== null && b.botDepth >= 1) {
+        rows.push([(depthM && depthM > b.botDepth * 1.25)
+          ? "At " + Math.round(b.botDepth) + " m (deepest model level)"
+          : "Near seabed (~" + Math.round(b.botDepth) + " m)", b.botP50, b.botP90]);
+      }
+      if (rows.length) {
+        table("Background (non tidal) current " + monthsLabel(), ["", "Typical", "Top 10%"], rows);
+        if (!head) head = "Background current typically " + fmtSpeed(rows[0][1]) + " at the surface.";
+      }
+    }
+    if (head) box.insertBefore(mk("p", "tm-cur-head", head), box.firstChild);
+  }
+
+  /* method notes, folded away so the numbers lead */
+  function curHowTo(box, extra) {
+    var d = document.createElement("details"), sm = document.createElement("summary"), i, p;
+    d.className = "tm-cur-how";
+    sm.textContent = "How these figures are worked out";
+    d.appendChild(sm);
+    var all = extra.concat(["Tidal surface and seabed figures come from the modelled " +
+      "water-column mean through the power-law velocity profile of DNVGL-RP-C205 4.1.4.1 " +
+      "(exponent 1/7, 4.1.4.3) at this water depth; measured profiles vary. Slack-water " +
+      "durations refer to the column mean. Background currents are model values at real " +
+      "depth levels. See the methodology page for more."]);
+    for (i = 0; i < all.length; i++) {
+      p = document.createElement("p");
+      p.textContent = all[i];
+      d.appendChild(p);
+    }
+    box.appendChild(d);
   }
 
   /* ---------- shareable URLs ----------
@@ -1786,6 +1891,8 @@
     return ("0" + (s * 3)).slice(-2) + ":00";
   }
 
+  function capFirst(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+
   function renderDiurnalPanel(di, sel) {
     /* shade the night hours: day-weighted mean daylight over the selection,
        symmetric about solar noon like the chart's own axis */
@@ -1803,7 +1910,7 @@
     });
     var line;
     if (di.relRange < 0.06) {
-      line = "Across the day " + monthsLabel() + ": no meaningful daily cycle at this " +
+      line = capFirst(monthsLabel()) + ": no meaningful daily cycle at this " +
         "point; conditions hold around the clock.";
     } else {
       var calm = [], rough = [];
@@ -1811,7 +1918,7 @@
       if (di.wind && di.wind[di.calmSlot] !== null) calm.push(di.wind[di.calmSlot].toFixed(1) + " m/s");
       if (di.hs && di.hs[di.roughSlot] !== null) rough.push(di.hs[di.roughSlot].toFixed(2) + " m");
       if (di.wind && di.wind[di.roughSlot] !== null) rough.push(di.wind[di.roughSlot].toFixed(1) + " m/s");
-      line = "Across the day " + monthsLabel() + ": calmest around " + diSlotLabel(di.calmSlot) +
+      line = capFirst(monthsLabel()) + ": calmest around " + diSlotLabel(di.calmSlot) +
         " local (" + calm.join(", ") + "), roughest around " + diSlotLabel(di.roughSlot) +
         " (" + rough.join(", ") + ").";
     }

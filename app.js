@@ -1122,6 +1122,8 @@
     row3.classList.toggle("tm-solo", !(haveWin && curSum));
     state.lastWindows = null;
     state.lastCur = null;
+    state.lastCurTables = null;
+    state.lastCurProfile = null;
     if (haveWin) renderWindowsPanel(res, sel);
     if (curSum) {
       var siteDepth = (state.depthExact && state.depthExact.key === cellKey &&
@@ -1500,7 +1502,8 @@
       nb.push("The code takes the vector sum (4.1.3.3); the components are summed here as if aligned. Climatological figures, not extreme-value design values.");
       curHowTo(box, [head + "."].concat(nb));
       state.lastCurProfile = {
-        head: head,
+        head: "Combined current through the water column (m/s)",
+        method: head,
         rows: prof.rows.map(function (rr) {
           return [rr.label, fmt2(rr.vt), fmt2(rr.vw), fmt2(rr.vc), fmt2(rr.tot)];
         }),
@@ -1531,6 +1534,7 @@
       td.appendChild(mk("span", "tm-kn", (v * 1.94384).toFixed(1) + " kn"));
     }
     function table(caption, cols, rows) {
+      out.tables.push({ caption: caption, cols: cols, rows: rows });
       var t = mk("table", "tm-cur-tbl"), tr = mk("tr"), j, k, td;
       t.appendChild(mk("caption", "", caption));
       for (j = 0; j < cols.length; j++) tr.appendChild(mk("th", "", cols[j]));
@@ -1553,6 +1557,8 @@
       box.appendChild(t);
     }
     var t = cs.tide, b = cs.bg, sf = 8 / 7, head = null, facts = [];
+    /* the same content, structured, for the PDF (state.lastCurTables) */
+    var out = { head: null, tables: [], facts: facts, factsAfter: 0 };
     if (t && t.spring !== null) {
       var sS = t.spring * sf, sN = t.neap !== null ? t.neap * sf : null;
       var bf = (depthM && depthM > 2) ? sf * Math.pow(1 / depthM, 1 / 7) : null;
@@ -1582,6 +1588,7 @@
           : "Diurnal, peaks about every 12.4 h"]);
       }
     }
+    out.factsAfter = out.tables.length;
     if (facts.length) {
       var dl = mk("dl", "tm-cur-facts"), f;
       for (f = 0; f < facts.length; f++) {
@@ -1604,6 +1611,8 @@
       }
     }
     if (head) box.insertBefore(mk("p", "tm-cur-head", head), box.firstChild);
+    out.head = head;
+    state.lastCurTables = (head || out.tables.length || facts.length) ? out : null;
   }
 
   /* method notes, folded away so the numbers lead */
@@ -1977,6 +1986,7 @@
       windowsLabel: state.lastWindows,
       curLines: state.lastCur,
       curProfile: state.lastCurProfile,
+      curTables: state.lastCurTables || null,
       cycLabel: state.lastCyc,
       diurnalLabel: state.lastDiurnal,
       ensoLabel: state.lastEnso,

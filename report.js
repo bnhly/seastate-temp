@@ -193,6 +193,62 @@
     return page;
   }
 
+  /* Current and tide as tables, matching the web panel. Numbers are right
+     aligned in fixed columns; a speed cell prints m/s with knots after it,
+     a text cell runs left from the first value column. */
+  function curSpeed(v) {
+    if (v === null || v === undefined) return "\u2013";
+    if (typeof v === "string") return v;
+    return v.toFixed(2).replace(/0$/, "") + " m/s (" + (v * 1.94384).toFixed(1) + " kn)";
+  }
+
+  function drawCurTable(P, page, fonts, y, tb) {
+    var n = tb.cols.length - 1, labW = n > 2 ? 110 : 170, colW = n > 2 ? 85 : 120;
+    var right = [], c, r, s, w;
+    for (c = 0; c < n; c++) right.push(M + labW + colW * (c + 1));
+    var x1 = right[n - 1];
+    page.drawText(tb.caption, { x: M, y: y, size: 7.8, font: fonts.bold, color: rgb(P, COL.ink) });
+    y -= 11;
+    for (c = 0; c < n; c++) {
+      s = tb.cols[c + 1];
+      w = fonts.bold.widthOfTextAtSize(s, 7);
+      page.drawText(s, { x: right[c] - w, y: y, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
+    }
+    if (tb.cols[0]) page.drawText(tb.cols[0], { x: M, y: y, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
+    y -= 4;
+    page.drawLine({ start: { x: M, y: y }, end: { x: x1, y: y }, thickness: 0.5, color: rgb(P, COL.grid) });
+    y -= 9;
+    for (r = 0; r < tb.rows.length; r++) {
+      var row = tb.rows[r];
+      page.drawText(String(row[0]), { x: M, y: y, size: 7.8, font: fonts.reg, color: rgb(P, COL.ink) });
+      for (c = 1; c < row.length; c++) {
+        if (typeof row[c] === "string" && row[c] !== "" && row[c + 1] === "") {
+          page.drawText(row[c], { x: M + labW + 12, y: y, size: 7.8, font: fonts.reg, color: rgb(P, COL.ink2) });
+          c++;
+          continue;
+        }
+        s = curSpeed(row[c]);
+        if (s === "") continue;
+        w = fonts.reg.widthOfTextAtSize(s, 7.8);
+        page.drawText(s, { x: right[c - 1] - w, y: y, size: 7.8, font: fonts.reg, color: rgb(P, COL.ink) });
+      }
+      y -= 4;
+      page.drawLine({ start: { x: M, y: y }, end: { x: x1, y: y }, thickness: 0.3, color: rgb(P, COL.grid) });
+      y -= 9;
+    }
+    return y - 6;
+  }
+
+  function drawCurFacts(P, page, fonts, y, facts) {
+    var i, lw = 0;
+    for (i = 0; i < facts.length; i++) lw = Math.max(lw, fonts.bold.widthOfTextAtSize(facts[i][0], 7.8));
+    for (i = 0; i < facts.length; i++) {
+      page.drawText(facts[i][0], { x: M, y: y, size: 7.8, font: fonts.bold, color: rgb(P, COL.ink) });
+      y = drawWrapped(page, fonts.reg, facts[i][1], M + lw + 12, y, 7.8, PAGE_W - 2 * M - lw - 12, 10, rgb(P, COL.ink)) - 2;
+    }
+    return y - 8;
+  }
+
   function sectionHead(P, page, fonts, x, y, text) {
     page.drawText(text.toUpperCase(), { x: x, y: y, size: 7.5, font: fonts.bold, color: rgb(P, COL.muted) });
     return y - 13;
@@ -521,12 +577,10 @@
             if (state.diurnalLabel) snap.push("Daily cycle " + state.diurnalLabel.charAt(0).toLowerCase() + state.diurnalLabel.slice(1));
             if (state.cycLabel) snap.push(state.cycLabel);
             if (state.ensoLabel) snap.push("El Nino vs La Nina: " + state.ensoLabel);
-            if (state.curLines) snap = snap.concat(state.curLines);
-            if (state.curProfile) {
-              snap.push(state.curProfile.head);
-              state.curProfile.rows.forEach(function (row) {
-                snap.push(row[0] + ": combined " + row[4] + " (tidal " + row[1] + ", wind-driven " + row[2] + ", background " + row[3] + ")");
-              });
+            if (state.curTables && state.curTables.head) snap.push(state.curTables.head);
+            if (state.curProfile && state.curProfile.rows.length) {
+              var cr0 = state.curProfile.rows[0];
+              snap.push("Combined current at the " + cr0[0].toLowerCase() + ": " + cr0[4] + " m/s (tidal, wind-driven and background added).");
             }
             /* an item is drawn only when it ends clear of the footer rule,
                and the heading only when at least one item follows it: the
@@ -712,35 +766,38 @@
               y4 = drawWrapped(p4, fonts.reg, state.diurnalLabel, M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 16;
             }
 
-            if (state.curLines && state.curLines.length) {
+            if (state.curTables || (state.curProfile && state.curProfile.rows.length)) {
               y4 = sectionHead(P, p4, fonts, M, y4, "Current and tide");
-              var ci;
-              for (ci = 0; ci < state.curLines.length && y4 > 150; ci++) {
-                y4 = drawWrapped(p4, fonts.reg, state.curLines[ci], M, y4, 8, PAGE_W - 2 * M, 10, rgb(P, COL.ink)) - 5;
+              var ct = state.curTables, ti4;
+              if (ct && ct.head) {
+                y4 = drawWrapped(p4, fonts.bold, ct.head, M, y4, 8.5, PAGE_W - 2 * M, 11, rgb(P, COL.ink)) - 8;
+              }
+              /* a table that would run into the footer starts a new page */
+              var curRoom = function (need) {
+                if (y4 - need < 96) {
+                  p4 = addPage(doc, P, fonts, logo, "Current and tide", hdrSub);
+                  y4 = PAGE_H - M - 44;
+                }
+              };
+              if (ct) {
+                for (ti4 = 0; ti4 <= ct.tables.length; ti4++) {
+                  if (ti4 === ct.factsAfter && ct.facts.length) {
+                    curRoom(ct.facts.length * 20);
+                    y4 = drawCurFacts(P, p4, fonts, y4, ct.facts);
+                  }
+                  if (ti4 < ct.tables.length) {
+                    curRoom(30 + ct.tables[ti4].rows.length * 13);
+                    y4 = drawCurTable(P, p4, fonts, y4, ct.tables[ti4]);
+                  }
+                }
               }
               if (state.curProfile && state.curProfile.rows.length) {
-                /* the DNVGL-RP-C205 profile as a small table: five columns,
-                   right-aligned numbers, one row per depth */
-                var pr = state.curProfile, colX = [M, M + 150, M + 215, M + 290, M + 370], rr, cc, txt, tw2;
-                y4 = drawWrapped(p4, fonts.bold, pr.head, M, y4, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink)) - 3;
-                for (cc = 0; cc < pr.cols.length; cc++) {
-                  txt = pr.cols[cc];
-                  tw2 = fonts.bold.widthOfTextAtSize(txt, 7);
-                  p4.drawText(txt, { x: cc === 0 ? colX[cc] : colX[cc] + 40 - tw2, y: y4, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
-                }
-                y4 -= 10;
-                for (rr = 0; rr < pr.rows.length; rr++) {
-                  for (cc = 0; cc < pr.rows[rr].length; cc++) {
-                    txt = pr.rows[rr][cc];
-                    tw2 = fonts.reg.widthOfTextAtSize(txt, 7.5);
-                    p4.drawText(txt, { x: cc === 0 ? colX[cc] : colX[cc] + 40 - tw2, y: y4, size: 7.5, font: fonts.reg, color: rgb(P, COL.ink) });
-                  }
-                  y4 -= 10;
-                }
-                y4 -= 2;
-                y4 = drawWrapped(p4, fonts.reg, pr.note, M, y4, 7, PAGE_W - 2 * M, 9, rgb(P, COL.ink2)) - 6;
+                var pr = state.curProfile;
+                curRoom(60 + pr.rows.length * 13);
+                y4 = drawCurTable(P, p4, fonts, y4, { caption: pr.head, cols: pr.cols, rows: pr.rows });
+                y4 = drawWrapped(p4, fonts.reg, pr.note, M, y4 + 2, 6.8, PAGE_W - 2 * M, 8.6, rgb(P, COL.muted)) - 6;
               }
-              y4 -= 12;
+              y4 -= 10;
             }
 
             /* the closing sections need about 330 pt (two headed paragraphs,

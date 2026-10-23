@@ -294,7 +294,7 @@ def health():
             s = subprocess.run(["openssl", "x509", "-enddate", "-noout", "-in", CERT],
                                capture_output=True, text=True, timeout=10).stdout.strip()
             end = datetime.datetime.strptime(s.split("=", 1)[1], "%b %d %H:%M:%S %Y %Z")
-            out["cert_days"] = (end - datetime.datetime.utcnow()).days
+            out["cert_days"] = (end - datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)).days
         except Exception:
             pass
     # patching (secure.sh turns on automatic updates)
@@ -302,7 +302,7 @@ def health():
     out["updates_last_run"] = None
     for lp in ("/var/log/unattended-upgrades/unattended-upgrades.log",):
         if os.path.exists(lp):
-            out["updates_last_run"] = datetime.datetime.utcfromtimestamp(os.path.getmtime(lp)).strftime("%Y-%m-%d")
+            out["updates_last_run"] = datetime.datetime.fromtimestamp(os.path.getmtime(lp), datetime.timezone.utc).strftime("%Y-%m-%d")
     out["security_pending"] = None
     try:
         s = subprocess.run(["apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"],

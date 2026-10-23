@@ -50,8 +50,17 @@ $APT upgrade >/root/seastate/secure_upgrade.log 2>&1 && echo "    done" || echo 
 $APT autoremove >/dev/null 2>&1
 
 echo "3/4 nginx version hidden"
-echo "server_tokens off;" > /etc/nginx/conf.d/seastate-tokens.conf
-if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else rm -f /etc/nginx/conf.d/seastate-tokens.conf; echo "    skipped (nginx test failed)"; fi
+# a second server_tokens line anywhere fails nginx -t ("duplicate"), so only
+# add one when no active line exists already
+rm -f /etc/nginx/conf.d/seastate-tokens.conf
+if grep -rqsE '^[[:space:]]*server_tokens[[:space:]]+off' /etc/nginx; then
+  echo "    already set"
+elif grep -rqsE '^[[:space:]]*server_tokens' /etc/nginx; then
+  echo "    left alone (nginx already has a server_tokens line)"
+else
+  echo "server_tokens off;" > /etc/nginx/conf.d/seastate-tokens.conf
+  if nginx -t >/dev/null 2>&1; then systemctl reload nginx; echo "    done"; else rm -f /etc/nginx/conf.d/seastate-tokens.conf; echo "    skipped (nginx test failed)"; fi
+fi
 
 echo "4/4 what this server listens on (should be nginx on 80 and 443, plus ssh on 22)"
 ss -tlnH 2>/dev/null | awk '{print "    " $4}' | sort -u
@@ -66,6 +75,7 @@ chk "daily update timer active" $([ "$(systemctl is-active apt-daily-upgrade.tim
 chk "updates set to install daily" $(apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"' && echo 1 || echo 0)
 chk "automatic restart at 16:00" $(apt-config dump 2>/dev/null | grep -q 'Automatic-Reboot-Time "16:00"' && echo 1 || echo 0)
 chk "server clock on UTC" $([ "$(date +%Z)" = UTC ] && echo 1 || echo 0)
+chk "nginx config test passes" $(nginx -t >/dev/null 2>&1 && echo 1 || echo 0)
 chk "nginx running" $([ "$(systemctl is-active nginx 2>/dev/null)" = active ] && echo 1 || echo 0)
 chk "certificate renewal timer active" $([ "$(systemctl is-active certbot.timer 2>/dev/null)" = active ] && echo 1 || echo 0)
 SEC=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst .*-security')

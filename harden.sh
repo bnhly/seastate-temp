@@ -221,9 +221,17 @@ fi
 server_body
 echo "}"
 if [ "$HAVE_CERT" = 1 ]; then
+# nginx 1.25.1 and later want "http2 on;" and warn about "listen ... http2"
+NGV=$(nginx -v 2>&1 | sed -n 's|.*nginx/\([0-9.]*\).*|\1|p')
+if [ -n "$NGV" ] && [ "$(printf '%s\n1.25.1\n' "$NGV" | sort -V | head -1)" = "1.25.1" ]; then
+  LISTEN443="listen 443 ssl default_server;
+  http2 on;"
+else
+  LISTEN443="listen 443 ssl http2 default_server;"
+fi
 cat <<EOF
 server {
-  listen 443 ssl http2 default_server;
+  $LISTEN443
   server_name $HOST;
   ssl_certificate $CERT_DIR/fullchain.pem;
   ssl_certificate_key $CERT_DIR/privkey.pem;

@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Free monthly wave, wind, extreme sea state and weather window statistics for any offshore location, with a one page PDF summary.">
 <meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=99b0ebc482">
+<link rel="stylesheet" href="style.css?v=14c8352cae">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -60,9 +60,7 @@
     <div class="tm-brand">
       <a class="tm-brand-mark" href="https://www.thrustm.com" target="_blank" rel="noopener"
          aria-label="Thrust Maritime">
-        <!-- The mark is optional. If the file is not deployed the onerror swaps in the
-             text wordmark, so the header never renders as a broken image. -->
-        <img src="assets/thrust-maritime-logo.png" alt="Thrust Maritime"
+                <img src="assets/thrust-maritime-logo.png" alt="Thrust Maritime"
              onerror="this.closest('.tm-brand-mark').hidden=true;document.getElementById('tm-brand-name').hidden=false;">
       </a>
       <span class="tm-brand-name" id="tm-brand-name" hidden>THRUST MARITIME</span>
@@ -74,10 +72,7 @@
     <a href="locations/index.html">Browse the location pages</a>, which work without JavaScript.</p></noscript>
   </header>
 
-  <!-- Condensed answer, pinned once the hero headline scrolls away. The
-       number is what people came for, so it should not vanish while they
-       read the detail panels. Filled by app.js from the same values. -->
-  <div id="tm-sticky" class="tm-sticky" hidden>
+    <div id="tm-sticky" class="tm-sticky" hidden>
     <div class="tm-sticky-in">
       <span id="tm-sticky-pct" class="tm-sticky-pct"></span>
       <span id="tm-sticky-txt" class="tm-sticky-txt"></span>
@@ -100,9 +95,7 @@
           <button id="tm-measure" type="button" aria-pressed="false" aria-label="Measure a distance"
             title="Measure: click a point, then click another. Escape ends it.">&#8596;</button>
         </div>
-        <!-- Reading for the current measurement. Sits over the map rather
-             than in the panel so the eye stays on the line being drawn. -->
-        <div class="tm-map-measure" id="tm-measure-out" hidden></div>
+                <div class="tm-map-measure" id="tm-measure-out" hidden></div>
         <div class="tm-map-legend" id="tm-legend" hidden></div>
         <div class="tm-map-hint" id="tm-hint">Click the map to choose a location</div>
         <div class="tm-map-coords" id="tm-coords" hidden></div>
@@ -180,11 +173,7 @@
       <div id="tm-wind" class="tm-basis tm-context" hidden></div>
       <div id="tm-daylight" class="tm-basis tm-context" hidden></div>
 
-      <!-- One grid for every figure. The row wrappers below keep their ids
-           (the panels are shown and hidden by row) but go display:contents,
-           so their figures become cells of THIS grid and flow to fill the
-           width instead of each row claiming its own band. -->
-      <div class="tm-figs">
+            <div class="tm-figs">
         <div class="tm-charts">
           <figure class="tm-fig">
             <figcaption>Chance of exceeding a given wave height</figcaption>
@@ -345,15 +334,15 @@
 
 <div class="tm-tip" id="tm-tip" hidden></div>
 
-<script>window.TM_BUILD="99b0ebc482";</script>
+<script>window.TM_BUILD="14c8352cae";</script>
 <script>window.TM_CONFIG_OVERRIDES=Object.assign(window.TM_CONFIG_OVERRIDES||{},{dataBase:"https://seastate-data.thrustm.com/data/"});</script>
-<script src="coastline.js?v=99b0ebc482"></script>
-<script src="borders.js?v=99b0ebc482"></script>
-<script src="places.js?v=99b0ebc482"></script>
-<script src="data.js?v=99b0ebc482"></script>
-<script src="map.js?v=99b0ebc482"></script>
-<script src="chart.js?v=99b0ebc482"></script>
-<script src="report.js?v=99b0ebc482"></script>
-<script src="app.js?v=99b0ebc482"></script>
+<script src="coastline.js?v=14c8352cae"></script>
+<script src="borders.js?v=14c8352cae"></script>
+<script src="places.js?v=14c8352cae"></script>
+<script src="data.js?v=14c8352cae"></script>
+<script src="map.js?v=14c8352cae"></script>
+<script src="chart.js?v=14c8352cae"></script>
+<script src="report.js?v=14c8352cae"></script>
+<script src="app.js?v=14c8352cae"></script>
 </body>
 </html>

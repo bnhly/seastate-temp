@@ -1,4 +1,4 @@
-/* Sea State Explorer - fixed light theme (public site + print/PDF stay light). */
+
 
 :root {
   --page: #f9f9f7;
@@ -18,10 +18,7 @@
 
 * { box-sizing: border-box; }
 
-/* The hidden attribute must always win: any class that sets display (e.g.
-   .tm-charts { display: grid }) otherwise overrides the UA's [hidden] rule,
-   and a data-gated section renders as an empty caption + note. First seen
-   live: diurnal / cyclone / ENSO rows on a dataset without those layers. */
+
 [hidden] { display: none !important; }
 
 html, body {
@@ -34,16 +31,14 @@ html, body {
   line-height: 1.45;
 }
 
-/* The map and the charts are the reason for the width. Prose keeps its own
-   max-width caps below so lines never run long enough to be hard to read. */
+
 #tm-app { max-width: 1560px; margin: 0 auto; padding: 18px 20px 40px; }
 
-/* Header */
+
 .tm-header { padding: 4px 2px 10px; }
 .tm-brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .tm-brand-name { font-weight: 700; letter-spacing: 0.14em; color: var(--accent-deep); font-size: 15px; }
-/* The logo carries its own colours, so it is never themed. aspect-ratio holds
-   the space before the file loads and stops the header jumping. */
+
 .tm-brand-mark { display: block; line-height: 0; align-self: center; }
 .tm-brand-mark img { display: block; height: 34px; width: auto; aspect-ratio: 1200 / 283; }
 @media (max-width: 560px) { .tm-brand-mark img { height: 26px; } }
@@ -51,7 +46,7 @@ html, body {
 .tm-brand-tool { font-weight: 600; font-size: 19px; margin: 0; }
 .tm-tagline { margin: 6px 0 0; color: var(--ink-2); max-width: 640px; }
 
-/* Data source banner */
+
 .tm-banner {
   margin: 10px 0 0;
   padding: 9px 12px;
@@ -67,10 +62,8 @@ html, body {
   color: var(--ink-2);
 }
 
-/* Map */
-/* Hero: map left, controls + the answer right (Ben, 31 Aug 26). The rail
-   keeps the headline beside the map so choosing a spot and reading the
-   result never needs a scroll; the full story stays below. */
+
+
 .tm-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -88,7 +81,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 10px;
 }
-/* the headline is already inside the rail card: no card-in-card chrome */
+
 .tm-side-answer .tm-headline {
   margin-top: 10px;
   padding: 0;
@@ -147,8 +140,7 @@ html, body {
   display: flex; flex-direction: column; gap: 3px;
   width: 118px;
 }
-/* Prose, so it is capped for reading length rather than following the
-   shell width. Wide is for the map and the charts, not for sentences. */
+
 .tm-context { margin-top: 4px; padding: 0 2px; max-width: 105ch; }
 .tm-dir-arrow {
   display: inline-block;
@@ -189,7 +181,7 @@ html, body {
   cursor: pointer;
 }
 
-/* asset market filters */
+
 .tm-asset-filters {
   display: flex; flex-wrap: wrap; gap: 6px 14px;
   align-items: center;
@@ -215,7 +207,7 @@ html, body {
 }
 #tm-f-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ENSO phase table */
+
 .tm-enso-wrap { overflow-x: auto; }
 .tm-enso-table {
   border-collapse: separate; border-spacing: 0;
@@ -233,7 +225,7 @@ html, body {
 .tm-enso-table td.tm-enso-hi { font-weight: 600; }
 .tm-enso-table tbody tr:last-child td { border-bottom: none; color: var(--muted); font-size: 12px; }
 
-/* manual position entry */
+
 .tm-goto {
   display: flex; flex-wrap: wrap; gap: 6px 10px;
   align-items: center;
@@ -260,7 +252,7 @@ html, body {
 .tm-goto-msg:empty { display: none; }
 .tm-goto-err { color: #b3392b; }
 
-/* legend rows built by app.js */
+
 .tm-lg-title { font-weight: 600; }
 .tm-lg-bar {
   display: block; height: 8px; border-radius: 4px;
@@ -284,7 +276,7 @@ html, body {
 }
 .tm-lg-gap { height: 4px; }
 
-/* Controls */
+
 .tm-controls {
   display: flex; flex-wrap: wrap; gap: 18px 28px;
   align-items: flex-end;
@@ -330,7 +322,7 @@ html, body {
   color: var(--ink);
 }
 
-/* Results */
+
 #tm-results { margin-top: 18px; }
 .tm-loc-line {
   display: flex; flex-wrap: wrap; gap: 4px 18px;
@@ -351,25 +343,18 @@ html, body {
 .tm-headline .tm-big { font-size: 46px; font-weight: 650; line-height: 1; }
 .tm-headline .tm-big-sub { font-size: 15px; color: var(--ink-2); max-width: 560px; }
 
-/* Every figure is a cell of one grid, so they flow: three across on a wide
-   screen, one on a phone, with no fixed row bands. auto-fit plus a minimum
-   does the whole job, so there are no per-row column templates to keep in
-   step with which panels happen to be visible. */
+
 .tm-figs {
   display: grid;
-  /* 470 px minimum: three cards a row on a wide screen, two on a laptop,
-     one on a phone. At 360 px four squeezed in at 1920 and every chart
-     label drew at 6 to 8 px (23 Oct 26). */
+  
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 470px), 1fr));
   gap: 14px;
   margin-top: 14px;
   align-items: start;
 }
-/* The row wrappers survive only to carry their ids and the hidden toggling.
-   display:contents lifts their children into .tm-figs. A hidden row still
-   disappears: [hidden] is display:none !important, which outranks this. */
+
 .tm-charts, .tm-charts-b, .tm-charts-c, .tm-charts-c.tm-solo { display: contents; }
-/* Roses are square and read badly when stretched. */
+
 .tm-chart-rose { max-width: 380px; margin: 0 auto; }
 .tm-win-controls {
   font-size: 13.5px;
@@ -481,7 +466,7 @@ html, body {
 }
 .tm-btn-secondary:hover { background: rgba(20, 48, 74, 0.06); }
 
-/* CTA + footer */
+
 .tm-cta {
   margin-top: 26px;
   padding: 18px;
@@ -496,7 +481,7 @@ html, body {
 .tm-footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
 .tm-footer p { margin: 6px 0; max-width: 900px; }
 
-/* Tooltip */
+
 .tm-tip {
   position: fixed;
   z-index: 50;
@@ -510,14 +495,14 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Responsive */
+
 @media (max-width: 760px) {
   .tm-table-row { grid-template-columns: 1fr; }
   .tm-map-wrap { height: 340px; }
   .tm-headline .tm-big { font-size: 38px; }
 }
 
-/* cyclone track filters: same visual family as the asset filter strip */
+
 .tm-track-ctl {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
   margin-top: 8px; padding: 8px 10px;
@@ -534,10 +519,7 @@ html, body {
 }
 .tm-track-ctl #tm-ct-count { margin-left: auto; color: var(--muted); }
 
-/* Sticky answer bar -------------------------------------------------------
-   Shown only once the hero headline has scrolled out of view (app.js drives
-   the hidden attribute from an IntersectionObserver). Sits below Frappe-free
-   territory but above the page; the map's own controls are inside the map. */
+
 .tm-sticky {
   position: fixed; top: 0; left: 0; right: 0; z-index: 40;
   background: var(--accent-deep, #14304a);
@@ -566,8 +548,7 @@ html, body {
 
 .tm-lg-none { color: var(--muted, #8a969e); font-style: italic; }
 
-/* Measure readout: same family as the coords chip. TOP left, because the
-   legend already owns bottom left and the coords chip owns bottom right. */
+
 .tm-map-measure {
   position: absolute; top: 10px; left: 10px;
   background: rgba(252, 252, 251, 0.94);
@@ -584,9 +565,7 @@ html, body {
 .tm-map-measure b { font-weight: 700; }
 .tm-map-measure .tm-meas-sub { color: var(--ink-2, #52514e); font-size: 11.5px; display: block; }
 
-/* Hs x Tp scatter ---------------------------------------------------------
-   A wide table, so it takes a full grid row and scrolls inside its own
-   container on narrow screens (the page body must never scroll sideways). */
+
 .tm-fig-full { grid-column: 1 / -1; }
 .tm-scatter-wrap { overflow-x: auto; }
 .tm-scatter { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: 100%;
@@ -599,11 +578,10 @@ html, body {
 .tm-scatter th { color: var(--ink-2, #52514e); font-weight: 600; background: var(--surface, #fcfcfb); }
 .tm-scatter .tm-sc-zero { color: var(--baseline, #c3c2b7); }
 .tm-scatter .tm-sc-tot { font-weight: 600; background: var(--surface, #fcfcfb); }
-/* heat cells carry literal dark text on their literal pale backgrounds, so
-   they read the same in both themes (house dark-theme rule) */
+
 .tm-scatter td.tm-sc-heat { color: #14304a; }
 
-/* DNV-RP-C205 profile table in the currents panel (fixed light theme, like the rest) */
+
 .tm-prof { border-collapse: separate; border-spacing: 0; margin: 4px 4px 8px; font-size: 12px; color: #1b2631; }
 .tm-prof caption { text-align: left; font-weight: 600; font-size: 12.2px; padding: 0 0 4px; color: #1b2631; }
 .tm-prof th, .tm-prof td { border-bottom: 1px solid #e3e8eb; padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }
@@ -614,8 +592,7 @@ html, body {
 .tm-footer-links { font-size: 12.5px; margin: 0 0 8px; }
 .tm-footer-links a { color: var(--accent); }
 
-/* footer sources table (Ben, 4 Sep 26: the licence paragraph as a table,
-   collapsed by default; the verbatim wording stays underneath) */
+
 .tm-sources { margin: 8px 0; max-width: none; }
 .tm-sources summary { cursor: pointer; color: var(--accent); font-size: 12.5px; font-weight: 600; }
 .tm-src-wrap { overflow-x: auto; margin: 8px 0 4px; }
@@ -627,12 +604,11 @@ html, body {
 .tm-src-licence { margin: 8px 0 2px; color: var(--ink-2); }
 .tm-src-more { margin: 4px 0 0; }
 
-/* launch review 23 Oct 26: a disclaimer where the numbers are read, and a
-   visible data credit (OSM and CC BY ask for one in view, not folded away) */
+
 .tm-res-disc { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .tm-credit { font-size: 12px; color: var(--muted); }
 
-/* feedback dialog (23 Oct 26) */
+
 .tm-fb-open { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; }
 .tm-fb { border: 1px solid var(--border, rgba(11,11,11,0.1)); border-radius: 10px; padding: 0; max-width: 520px; width: calc(100% - 32px); color: var(--ink, #0b0b0b); background: var(--surface, #fcfcfb); box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
 .tm-fb::backdrop { background: rgba(20, 48, 74, 0.35); }

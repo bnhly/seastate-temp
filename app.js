@@ -2266,7 +2266,17 @@
       /* two-argument then: only a FAILED manifest load falls back to the
          demo; an exception inside boot() itself surfaces in the console
          instead of silently booting a second, synthetic app on top */
-      tp.ready.then(function () { boot(tp, tp.meta.source === "DEMO"); }, useDemo);
+      /* a remote data host (seastate-data.thrustm.com) that cannot be
+         reached falls back to the site's own data/ copy before the demo,
+         so the site never shows synthetic numbers just because the data
+         host is down or its certificate is not issued yet */
+      var fallback = function () {
+        if (!/^https?:/.test(cfg.dataBase)) { useDemo(); return; }
+        cfg.dataBase = "data/";
+        var tp2 = new D.TileProvider(cfg.dataBase);
+        tp2.ready.then(function () { boot(tp2, tp2.meta.source === "DEMO"); }, useDemo);
+      };
+      tp.ready.then(function () { boot(tp, tp.meta.source === "DEMO"); }, fallback);
     } catch (e) {
       useDemo();
     }

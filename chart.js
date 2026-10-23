@@ -24,6 +24,17 @@
     return e;
   }
 
+  /* Charts are drawn at their card's real width (23 Oct 26): a fixed design
+     width scaled into a narrow card shrank every label to 6 to 8 px, and
+     scaling the labels back up made them collide with the plot edges.
+     Clamped so a hidden container (width 0) or a very wide one keeps a
+     sensible shape; the height stays the design height. */
+  function drawW(container, w0) {
+    var c = container && container.clientWidth ? container.clientWidth : 0;
+    if (!c) return w0;
+    return Math.round(Math.max(300, Math.min(900, c)));
+  }
+
   function txt(parent, x, y, s, attrs) {
     var e = el("text", attrs || {}, parent);
     e.setAttribute("x", x);
@@ -59,7 +70,7 @@
   /* spec: {thresholds, p, limit, interp(h) -> {p, floor}} */
   function renderCurve(container, spec) {
     container.innerHTML = "";
-    var W = 640, H = 300, m = { l: 48, r: 16, t: 18, b: 46 };
+    var W = drawW(container, 640), H = 300, m = { l: 48, r: 16, t: 18, b: 46 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var xMax = spec.thresholds[spec.thresholds.length - 1];
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
@@ -145,7 +156,7 @@
   /* spec: {values:[12 of % or null], selected:[12 bool], limit, monthNames} */
   function renderBars(container, spec) {
     container.innerHTML = "";
-    var W = 430, H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
+    var W = drawW(container, 430), H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Percent of time above the operational limit, by calendar month" });
@@ -224,7 +235,7 @@
      monthly-median line could never show. */
   function renderTpHist(container, spec) {
     container.innerHTML = "";
-    var W = 660, H = 240, m = { l: 46, r: 12, t: 22, b: 36 };
+    var W = drawW(container, 660), H = 240, m = { l: 46, r: 12, t: 22, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Percent of time the peak wave period falls in each one second band" });
@@ -378,7 +389,7 @@
      fine for a position encoding). spec: {values:[12 s or null], selected:[12 bool], monthNames} */
   function renderTpMonths(container, spec) {
     container.innerHTML = "";
-    var W = 430, H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
+    var W = drawW(container, 430), H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Typical peak wave period by calendar month" });
@@ -451,7 +462,7 @@
      selected:[12 bool], monthNames, thr (m), dur (h)} */
   function renderWindows(container, spec) {
     container.innerHTML = "";
-    var W = 430, H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
+    var W = drawW(container, 430), H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Weather windows per month: separate periods of the chosen length with wave height below the chosen limit" });
@@ -527,7 +538,7 @@
      selected:[12 bool], monthNames, radius (nm)} */
   function renderCyc(container, spec) {
     container.innerHTML = "";
-    var W = 430, H = 260, m = { l: 44, r: 10, t: 20, b: 36 };
+    var W = drawW(container, 430), H = 260, m = { l: 44, r: 10, t: 20, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Average storm-days per month with a tropical cyclone inside the chosen distance" }, null);
@@ -588,7 +599,7 @@
      panels in one figure. spec: {hs:[8 m|null], wind:[8 m/s|null]} */
   function renderDiurnal(container, spec) {
     container.innerHTML = "";
-    var W = 660, H = 240;
+    var W = drawW(container, 660), H = 240;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
       "aria-label": "Mean wave height and wind speed by three hour slot of the local solar day" });
     container.appendChild(svg);
@@ -669,6 +680,66 @@
     });
   }
 
+  /* Readable text at any card width (23 Oct 26, Ben: "some feel too
+     small"). Charts are drawn in a fixed viewBox, so in a card narrower than
+     the viewBox every label shrinks with it: 11 units drew at about 6 px in
+     the 4-up desktop grid and on a phone. After each render the labels are
+     scaled by viewBox width / drawn width (capped at 1.7), from the base
+     sizes kept on data-fs0, and again when the window is resized. */
+  function fitText(svg) {
+    var vb = (svg.getAttribute("viewBox") || "").split(/\s+/);
+    var W = parseFloat(vb[2]), H = parseFloat(vb[3]), rc = svg.getBoundingClientRect();
+    if (!W || !H || !rc.width || !rc.height) return;
+    /* drawn scale: the smaller of the two, since a height-capped chart is
+       letterboxed inside its box */
+    var sc = Math.min(rc.width / W, rc.height / H);
+    var ts = svg.querySelectorAll("text"), i, t, f0, k;
+    for (i = 0; i < ts.length; i++) {
+      t = ts[i];
+      f0 = t.getAttribute("data-fs0");
+      if (f0 === null) {
+        f0 = t.getAttribute("font-size") || "11";
+        t.setAttribute("data-fs0", f0);
+      }
+      /* every label at least 11.5 px on screen (its own size when the chart
+         draws larger), never more than 1.9 times its design size */
+      k = Math.max(1, Math.min(1.9, 12 / (parseFloat(f0) * sc)));
+      t.setAttribute("font-size", (parseFloat(f0) * k).toFixed(1));
+    }
+  }
+  /* a chart drawn at its card's width is drawn again when the card changes
+     width (window resized, phone turned) */
+  var drawn = [];
+  function fitAll() {
+    var i, d, w;
+    for (i = 0; i < drawn.length; i++) {
+      d = drawn[i];
+      if (!d.el.isConnected) continue;
+      w = d.el.clientWidth;
+      if (w && Math.abs(w - d.w) > 12) d.fn.apply(null, d.args);
+      else { var sv = d.el.querySelector("svg"); if (sv) fitText(sv); }
+    }
+  }
+  var fitTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitAll, 150);
+  });
+  function fitted(fn) {
+    var wrapped = function (container) {
+      var out = fn.apply(this, arguments);
+      var svg = container && container.querySelector ? container.querySelector("svg") : null;
+      if (svg) fitText(svg);
+      if (container && container.nodeType === 1) {
+        var i, rec = { el: container, fn: wrapped, args: Array.prototype.slice.call(arguments), w: container.clientWidth };
+        for (i = 0; i < drawn.length; i++) if (drawn[i].el === container) { drawn[i] = rec; rec = null; break; }
+        if (rec) drawn.push(rec);
+      }
+      return out;
+    };
+    return wrapped;
+  }
+
   window.TMCharts = {
     renderCurve: renderCurve,
     renderBars: renderBars,
@@ -681,4 +752,8 @@
     curvePoints: curvePoints,
     tip: tip
   };
+  ["renderCurve", "renderBars", "renderRose", "renderTpMonths", "renderTpHist",
+   "renderWindows", "renderCyc", "renderDiurnal"].forEach(function (n) {
+    window.TMCharts[n] = fitted(window.TMCharts[n]);
+  });
 })();

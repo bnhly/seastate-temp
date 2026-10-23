@@ -79,7 +79,7 @@ html, body {
   margin-top: 14px;
 }
 .tm-hero .tm-map-card { margin-top: 0; min-width: 0; }
-.tm-hero .tm-map-wrap { height: 520px; }
+.tm-hero .tm-map-wrap { height: clamp(520px, 64vh, 760px); }
 .tm-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .tm-side .tm-controls { margin-top: 0; flex-direction: column; align-items: stretch; }
 .tm-side-answer {
@@ -338,7 +338,7 @@ html, body {
   padding: 2px 2px 0;
 }
 #tm-loc { font-weight: 600; font-size: 15.5px; }
-.tm-basis { color: var(--muted); font-size: 12.5px; }
+.tm-basis { color: var(--muted); font-size: 13.5px; }
 
 .tm-headline {
   margin-top: 10px;
@@ -357,7 +357,10 @@ html, body {
    step with which panels happen to be visible. */
 .tm-figs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  /* 470 px minimum: three cards a row on a wide screen, two on a laptop,
+     one on a phone. At 360 px four squeezed in at 1920 and every chart
+     label drew at 6 to 8 px (23 Oct 26). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 470px), 1fr));
   gap: 14px;
   margin-top: 14px;
   align-items: start;
@@ -367,9 +370,9 @@ html, body {
    disappears: [hidden] is display:none !important, which outranks this. */
 .tm-charts, .tm-charts-b, .tm-charts-c, .tm-charts-c.tm-solo { display: contents; }
 /* Roses are square and read badly when stretched. */
-.tm-chart-rose { max-width: 320px; margin: 0 auto; }
+.tm-chart-rose { max-width: 380px; margin: 0 auto; }
 .tm-win-controls {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--ink-2);
   padding: 0 4px 8px;
   display: flex;
@@ -385,8 +388,8 @@ html, body {
   border-radius: 6px;
   padding: 3px 6px;
 }
-.tm-win-sum { font-size: 12.5px; color: var(--ink); padding: 0 4px 8px; font-weight: 600; }
-.tm-fig-note { font-size: 11px; color: var(--muted); padding: 4px 4px 6px; margin: 0; }
+.tm-win-sum { font-size: 13.5px; color: var(--ink); padding: 0 4px 8px; font-weight: 600; line-height: 1.45; }
+.tm-fig-note { font-size: 12px; color: var(--muted); padding: 4px 4px 6px; margin: 0; line-height: 1.45; }
 .tm-cur-lines { padding: 2px 4px 8px; }
 .tm-cur-lines p { margin: 0 0 9px; font-size: 12.8px; color: var(--ink); line-height: 1.45; }
 .tm-cur-lines p:first-child { font-weight: 600; }
@@ -397,8 +400,8 @@ html, body {
   border-radius: 10px;
   padding: 12px 12px 6px;
 }
-.tm-fig figcaption { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0 4px 6px; }
-.tm-chart svg { display: block; width: 100%; height: auto; }
+.tm-fig figcaption { font-size: 14.5px; font-weight: 600; color: var(--ink); padding: 0 4px 8px; }
+.tm-chart svg { display: block; width: 100%; height: auto; max-height: 380px; }
 
 .tm-table-row {
   display: grid;
@@ -573,10 +576,10 @@ html, body {
    container on narrow screens (the page body must never scroll sideways). */
 .tm-fig-full { grid-column: 1 / -1; }
 .tm-scatter-wrap { overflow-x: auto; }
-.tm-scatter { border-collapse: separate; border-spacing: 0; font-size: 11.5px;
+.tm-scatter { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: 100%;
   font-variant-numeric: tabular-nums; color: var(--ink, #1b2631); }
 .tm-scatter th, .tm-scatter td {
-  padding: 2px 6px; text-align: right; white-space: nowrap;
+  padding: 3px 6px; text-align: right; white-space: nowrap;
   border-right: 1px solid var(--border, #e3e8eb);
   border-bottom: 1px solid var(--border, #e3e8eb);
 }

@@ -334,7 +334,7 @@
       period: "for layout evaluation only",
       attribution: "Demonstration mode: values are generated from a simplified parametric wave " +
         "climate model and are NOT real measurements or reanalysis. The production version is " +
-        "built from the ERA5 reanalysis (see the methodology page)."
+        "built from the ERA5 reanalysis (see the How it works page)."
     };
     this.thresholds = THRESHOLDS;
     this.ready = Promise.resolve(this);

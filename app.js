@@ -28,7 +28,7 @@
       "Thrust Maritime, Sea State Explorer, the location and the date you read it, with a " +
       "link to the result. Automated bulk extraction of the tool's data tiles is not " +
       "permitted; the underlying open datasets are available from the original providers " +
-      "credited below, and the methodology page states every source and derivation."
+      "credited below and on the How it works page."
   };
 
   var cfg = {};
@@ -1625,7 +1625,7 @@
       "water-column mean through the power-law velocity profile of DNVGL-RP-C205 4.1.4.1 " +
       "(exponent 1/7, 4.1.4.3) at this water depth; measured profiles vary. Slack-water " +
       "durations refer to the column mean. Background currents are model values at real " +
-      "depth levels. See the methodology page for more."]);
+      "depth levels. See the How it works page for more."]);
     for (i = 0; i < all.length; i++) {
       p = document.createElement("p");
       p.textContent = all[i];

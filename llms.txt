@@ -19,7 +19,7 @@
 ## Citable pages
 
 - [Locations index](https://seastate.thrustm.com/locations/index.html): 85 named offshore working areas, each with a monthly table, the headline numbers in words, the data basis and a citation line
-- [Methodology](https://seastate.thrustm.com/methodology.html): how the statistics are computed
+- [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
 - [Explorer](https://seastate.thrustm.com/): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result
 
 ## How to cite
@@ -30,7 +30,7 @@
 ## Not for scraping
 
 - The tile files under /data/ are bulk inputs for the interactive map, excluded from crawling in robots.txt, and not a citable surface. Automated bulk extraction is not permitted; the underlying open datasets are available from the original providers credited above.
-- The location pages and the methodology page are the reference surface: quote from them and link to them.
+- The location pages and the How it works page are the reference surface: quote from them and link to them.
 
 ## Contact
 

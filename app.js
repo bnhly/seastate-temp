@@ -491,76 +491,66 @@
      Copernicus and ECMWF require their exact wording; the table is the
      readable version, not a replacement. Rows for optional layers appear
      once that layer's file has loaded. */
-  var OURS_WAVES = "Nearest grid cell, no interpolation. Share of time at or above each " +
-    "height from 0.25 m bins per calendar month, months combined by their length in days, " +
-    "extremes as the 99th and 99.9th percentile of the 3 hourly samples, calm spells " +
-    "tracked per cell for the weather windows.";
+  var OURS_WAVES = "How often waves pass each height, month by month, plus the extremes and " +
+    "weather windows. We use the closest grid cell to your point.";
 
   function sourceRows() {
     var m = state.provider.meta || {}, src = String(m.source || "").toUpperCase();
     var attr = String(m.attribution || "");
     var rows = [];
     if (src === "WAVERYS") {
-      rows.push(["Waves: significant height, peak period, direction",
-        "WAVERYS wave reanalysis, Mercator Ocean International via the Copernicus Marine Service (" + m.period + ")",
-        "MFWAM wave model reanalysis on a 0.2 degree grid, forced by ERA5 winds and GLORYS currents, " +
-        "assimilating satellite altimeter wave heights and Sentinel-1 SAR wave spectra. Buoys are used " +
-        "to validate it, not assimilated.",
+      rows.push(["Waves",
+        "WAVERYS wave reanalysis, Copernicus Marine Service (" + m.period + ")",
+        "A wave model re-run over past decades and corrected with satellite wave measurements. " +
+        "Grid cells about 20 km apart.",
         OURS_WAVES]);
     } else if (src === "ERA5") {
-      rows.push(["Waves: significant height, peak period, direction",
-        "ERA5 reanalysis, ECMWF via the Copernicus Climate Change Service (" + m.period + ")",
-        "Global wave model coupled to the ERA5 atmospheric reanalysis on a 0.5 degree grid, " +
-        "assimilating satellite altimeter wave heights. Buoys are used to validate it, not assimilated.",
+      rows.push(["Waves",
+        "ERA5 reanalysis, Copernicus Climate Change Service (" + m.period + ")",
+        "A wave model re-run over past decades and corrected with satellite wave measurements. " +
+        "Grid cells about 50 km apart.",
         OURS_WAVES]);
     } else {
-      rows.push(["Waves", m.sourceLabel || "Demonstration data", "Synthetic climatology for the demonstration mode.", OURS_WAVES]);
+      rows.push(["Waves", m.sourceLabel || "Demonstration data", "Made-up numbers for the demonstration mode.", OURS_WAVES]);
     }
     if (src === "ERA5" || attr.indexOf("ERA5") >= 0) {
-      rows.push(["Wind at 10 m",
-        "ERA5 reanalysis, ECMWF via the Copernicus Climate Change Service",
-        "Atmospheric reanalysis that assimilates satellite radiances and winds, radiosondes, aircraft, " +
-        "ships, buoys and land stations; 3 hourly values on a 0.5 degree grid.",
-        "Monthly mean and top decile, direction rose in 12 sectors of 30 degrees, daily cycle by 3 hour " +
-        "slot of the local solar day" + (m.enso ? ", El Nino and La Nina split by NOAA ONI phase." : ".")]);
+      rows.push(["Wind",
+        "ERA5 reanalysis, Copernicus Climate Change Service",
+        "A weather model re-run over past decades and checked against satellites, weather balloons, " +
+        "ships, buoys and land stations. Grid cells about 50 km apart.",
+        "Typical and strong wind speeds, where the wind comes from, and how it changes through the day" +
+        (m.enso ? ", including the El Nino and La Nina split." : ".")]);
     }
-    rows.push(["Water depth and contours",
-      "ETOPO 2022 Global Relief Model, NOAA NCEI; Natural Earth 1:10m bathymetry for the world-scale contours",
-      "Compiled bathymetry: ship soundings and multibeam surveys, gravity-derived depths from satellite " +
-      "altimetry, coastal lidar; used here at 60 arc seconds.",
-      "Depth at the data point from a 0.1 degree block mean, fine contours chosen from the depths in view, " +
-      "depth bands at world scale; the depth the current profile and the tidal bottom-metre figure use."]);
+    rows.push(["Water depth",
+      "ETOPO 2022, NOAA; Natural Earth for the world map",
+      "Built from ship soundings, seabed surveys and satellite data.",
+      "Depth at your point and the depth contours on the map."]);
     rows.push(["Coastline",
-      "GSHHG (Wessel and Smith, 1996) at close zoom, Natural Earth 1:50m land at world scale",
-      "Digitised shorelines from the World Vector Shoreline and World Data Bank II, made hierarchical and self consistent.",
-      "Map drawing at every zoom."]);
+      "GSHHG up close, Natural Earth at world scale",
+      "Digitised shorelines.",
+      "Drawing the map."]);
     if (state.curAttribution) {
       rows.push(["Tidal streams",
-        "Copernicus Marine global hourly merged surface currents, barotropic tidal component",
-        "Global tide model solution constrained by satellite altimetry and tide gauges, hourly on a 1/12 degree grid.",
+        "Copernicus Marine Service, global tide model",
+        "A tide model checked against satellites and tide gauges.",
         "Typical peak stream at springs and neaps, how long slack water lasts, and the stream at the " +
         "surface and near the seabed."]);
       rows.push(["Background currents",
-        "GLORYS12 ocean reanalysis, Mercator Ocean International via the Copernicus Marine Service",
-        "1/12 degree ocean model reanalysis assimilating satellite sea level and sea surface temperature, sea ice, " +
-        "and in situ temperature and salinity profiles from Argo floats, moorings and ships; daily means at six depths.",
-        "Median and top decile speed per month at the surface and at the deepest modelled level that is wet; " +
-        "the circulation term of the combined current profile."]);
+        "GLORYS12 ocean reanalysis, Copernicus Marine Service",
+        "An ocean model re-run over past decades and checked against satellites, floats, moorings and ships.",
+        "Typical and strong current at the surface and at depth."]);
     }
     if (state.cycAttribution) {
       rows.push(["Tropical cyclones",
-        "IBTrACS v04 best tracks, NOAA NCEI, satellite era",
-        "Agency best tracks compiled from satellite imagery, aircraft reconnaissance, radar and surface " +
-        "observations, with positions and winds every 6 hours.",
-        "Storm months and storm days inside fixed rings of the point, the strongest category on record " +
-        "inside each ring, and the track drawing on the map."]);
+        "IBTrACS storm tracks, NOAA, 1980 on",
+        "Official storm tracks from the weather agencies, from satellite, aircraft and radar.",
+        "How often storms pass near your point, the strongest on record, and the tracks on the map."]);
     }
     if (state.assetsAttribution) {
       rows.push(["Oil and gas assets",
         "Regulator registers (BSEE and BOEM, Norwegian Offshore Directorate, Geoscience Australia), " +
         "Global Energy Monitor trackers, OpenStreetMap",
-        "Operator filings and surveyed positions held by the regulators; public records compiled by the " +
-        "trackers; volunteer mapping from imagery and surveys in OpenStreetMap.",
+        "Government records, public trackers and volunteer mapping.",
         "Platforms, wells, fields and pipelines on the map, and the nearest asset to your point. " +
         "Positions are indicative, never for navigation."]);
     }
@@ -573,7 +563,7 @@
     var rows = sourceRows(), tbl = document.createElement("table"), tr, th, td, i, j;
     tbl.className = "tm-src";
     tr = document.createElement("tr");
-    ["Data", "Source", "How it is collected or produced", "How we use it"].forEach(function (hd) {
+    ["Data", "Source", "How it's made", "How we use it"].forEach(function (hd) {
       th = document.createElement("th");
       th.textContent = hd;
       tr.appendChild(th);

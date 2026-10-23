@@ -122,82 +122,81 @@
 
   <h1>How it works</h1>
 
-  <p class="lede">Click a point at sea, pick the months you care about, and the explorer tells you how that patch of sea has behaved over more than forty years. This page covers where the numbers come from, how to read them, and where they stop being useful.</p>
+  <p class="lede">We built Sea State Explorer because getting a quick, honest answer to "what's the sea like out there in July?" was harder than it should be. The data exists, but it's buried in research archives. This page explains where our numbers come from and how far you can trust them.</p>
 
   <nav class="toc" aria-label="Contents">
     <span class="title">On this page</span>
     <ol>
       <li><a href="#sources">Where the numbers come from</a></li>
       <li><a href="#reading">Reading the results</a></li>
-      <li><a href="#limits">What it can't tell you</a></li>
-      <li><a href="#cite">Sharing and citing</a></li>
+      <li><a href="#limits">Where it falls short</a></li>
+      <li><a href="#cite">Sharing and quoting</a></li>
       <li><a href="#licences">Data credits</a></li>
     </ol>
   </nav>
 
-  <h2 id="sources">1. Where the numbers come from</h2>
+  <h2 id="sources">Where the numbers come from</h2>
 
-  <p>Nothing here is measured at your point and nothing is a forecast. The figures come from <b>reanalysis</b>: weather and wave models re-run over past decades, kept on track by satellite and buoy observations, and saved every 3 hours on a global grid. It is the same kind of data that early stage metocean studies start from.</p>
+  <p>None of this is measured at your point, and none of it is a forecast. It comes from reanalysis, which is what you get when forecasters re-run their weather and wave models over past decades and keep them honest with satellite and buoy observations. The result is a record every 3 hours, everywhere, going back to 1980. Most metocean studies start from the same kind of data.</p>
+
+  <p>Here's what we use:</p>
 
   <div class="wrap">
   <table>
     <tr><th>What</th><th>Source</th></tr>
-    <tr><td>Waves</td><td>WAVERYS global wave reanalysis, Copernicus Marine Service. 0.2 degree grid (about 20 km), every 3 hours, 1980 to 2023.</td></tr>
-    <tr><td>Wind</td><td>ERA5 reanalysis, Copernicus Climate Change Service (ECMWF). 0.5 degree grid, to 2024.</td></tr>
+    <tr><td>Waves</td><td>WAVERYS wave reanalysis from the Copernicus Marine Service. Grid cells about 20 km apart, every 3 hours, 1980 to 2023.</td></tr>
+    <tr><td>Wind</td><td>ERA5 reanalysis from the Copernicus Climate Change Service (ECMWF). Coarser grid, about 50 km, up to 2024.</td></tr>
     <tr><td>Wave height against period table</td><td>ERA5, grouped into 1 degree blocks.</td></tr>
-    <tr><td>Tide and current</td><td>Copernicus Marine Service: a global tide model for the tidal stream, and the GLORYS12 ocean reanalysis for the background (non tidal) current.</td></tr>
-    <tr><td>Water depth</td><td>ETOPO 2022, NOAA, averaged to about 11 km.</td></tr>
-    <tr><td>Tropical cyclones</td><td>IBTrACS best tracks, NOAA, 1980 onwards.</td></tr>
-    <tr><td>Coastlines, contours, places</td><td>Natural Earth and GSHHG.</td></tr>
+    <tr><td>Tide and current</td><td>Copernicus Marine Service. A global tide model for the tidal stream and the GLORYS12 ocean reanalysis for everything else.</td></tr>
+    <tr><td>Water depth</td><td>ETOPO 2022 from NOAA, averaged over roughly 11 km.</td></tr>
+    <tr><td>Tropical cyclones</td><td>IBTrACS storm tracks from NOAA, 1980 on.</td></tr>
+    <tr><td>Coastlines and place names</td><td>Natural Earth and GSHHG.</td></tr>
     <tr><td>Oil and gas assets</td><td>OpenStreetMap, Global Energy Monitor, Geoscience Australia, the Norwegian Offshore Directorate and US BOEM / BSEE.</td></tr>
   </table>
   </div>
 
-  <p>The explorer uses the nearest grid cell to your click and tells you how far away it is. It does not blend neighbouring cells. The <b>Data sources</b> table at the foot of the explorer always shows the exact record in use.</p>
+  <p>When you click, we use the closest grid cell and tell you how far away it is. We don't blend neighbouring cells together. If you want the exact record behind a result, open Data sources at the bottom of the explorer.</p>
 
-  <h2 id="reading">2. Reading the results</h2>
+  <h2 id="reading">Reading the results</h2>
 
   <h3>Percent of time above a wave height</h3>
-  <p>The headline figure is the share of all 3 hourly records, in the months you picked, where significant wave height (Hs) was at or above your limit. Hs is roughly the average height of the biggest third of the waves. Individual waves can be close to twice that.</p>
+  <p>The big number at the top is how often significant wave height (Hs) was at or above your limit, counting every 3 hourly record in the months you picked. Hs is roughly the average of the highest third of the waves, so expect the odd wave close to double that.</p>
 
   <h3>Extremes</h3>
-  <p>"1 sea state in 100 is above X m" means exactly that: 1 in every 100 of the 3 hourly records was higher than X. It is <b>not</b> a 100 year wave and should never be used as one. Design extremes need a proper extreme value study.</p>
+  <p>When we say "1 sea state in 100 is above 6 m", we mean 1 in every 100 records was higher than 6 m. That's not a 100 year wave, and it shouldn't be treated like one. If you need design extremes, you need a proper extreme value study.</p>
 
   <h3>Weather windows</h3>
-  <p>How many separate working periods of your chosen length, with Hs below your limit, a typical month holds. A 3 day calm counts as three 24 hour periods. It is estimated from how long calm spells usually last, so treat it as a planning figure. Checked against exact counts, it lands within about one period a month on average.</p>
+  <p>This counts how many separate working periods of your chosen length fit into a typical month with Hs below your limit. A three day calm counts as three 24 hour periods. We estimate it from how long calm spells usually last rather than counting them one by one, and when we tested it against exact counts it was usually within one period a month. Good enough for planning, not for a contract.</p>
 
   <h3>Across the day</h3>
-  <p>Average wind and wave height in 3 hour slots of the local solar day, where noon is when the sun is highest, not clock time. Near coasts and in the tropics you often see a calm morning and a windier afternoon from the sea breeze. Out in the open ocean there is usually no daily pattern, and the explorer says so.</p>
+  <p>Average wind and wave height for each 3 hour slot of the day. The times are local solar time, so noon is when the sun is highest, which may not match your clock. Near the coast and in the tropics you'll often see a calm morning and a breezy afternoon. Out in open ocean there's usually no pattern at all, and the explorer will tell you that.</p>
 
   <h3>Current and tide</h3>
-  <p>Typical peak tidal stream at springs and neaps, how long the slack lasts at each turn, and the background current that is there regardless of tide. The model gives an average over the water column, which is then scaled to the surface and seabed with the standard 1/7 power profile. The combined table adds tide, wind driven and background current the way DNVGL-RP-C205 section 4.1 describes. It is a screening figure, not a design current.</p>
+  <p>You get the typical peak tidal stream at springs and neaps, how long slack water lasts, and the background current that runs regardless of the tide. The tide model only gives an average over the full water depth, so we scale it to the surface and seabed using the usual 1/7 power profile. The combined table adds tide, wind and background current together following DNVGL-RP-C205 section 4.1. Use it to see whether current matters at a site. It isn't a design current.</p>
 
   <h3>Tropical cyclones</h3>
-  <p>How often tropical storms and cyclones have passed within 120, 250, 500 and 1,000 nautical miles of the point in your months, and the strongest one on record. Many operations start securing and demobilising when a cyclone comes within 1,000 nm, so this downtime is on top of what the wave statistics show.</p>
+  <p>We count how often tropical storms and cyclones have come within 120, 250, 500 and 1,000 nautical miles of your point in the months you picked, and show the strongest on record. Plenty of operations start securing and demobilising once a cyclone is inside 1,000 nm, so expect that downtime on top of the wave statistics.</p>
 
   <h3>Assets</h3>
-  <p>Platforms, wells, fields and pipelines are shown from public registers so you can get your bearings. Positions are indicative only and must never be used for navigation.</p>
+  <p>Platforms, wells, fields and pipelines come from public registers and are there to help you get your bearings. The positions are approximate. Don't navigate by them.</p>
 
-  <h2 id="limits">3. What it can't tell you</h2>
-  <ul>
-    <li><b>Near the coast.</b> The models are coarse and unreliable close to land, in bays, and in shallow or sheltered water.</li>
-    <li><b>Cyclone seas.</b> Reanalysis smooths out tropical cyclones and tends to understate the worst seas.</li>
-    <li><b>Short events.</b> Records are every 3 hours, so anything shorter can fall between them.</li>
-    <li><b>Your vessel.</b> Real workability also depends on wave period, direction, current and how your vessel moves. A limit on Hs alone is only the first cut.</li>
-    <li><b>Design.</b> None of this is for engineering design, navigation or go / no-go decisions.</li>
-  </ul>
+  <h2 id="limits">Where it falls short</h2>
+  <p>The models are coarse, so treat anything close to land, in a bay, or in shallow or sheltered water with suspicion. They also smooth out tropical cyclones and tend to understate the worst seas. With a record every 3 hours, short sharp events can slip between readings.</p>
+  <p>Wave height is only part of the story. Whether a job can go ahead also depends on wave period, direction, current, and how your vessel actually moves. And none of this is for engineering design, navigation, or deciding go or no-go on the day.</p>
 
-  <h2 id="cite">4. Sharing and citing</h2>
-  <p>Every result has its own link. Use <b>Copy link to this result</b> and anyone who opens it sees the same point, months and limits. The PDF summary carries the same link.</p>
-  <p>You're welcome to quote the explorer. Please credit it like this: <i>Thrust Maritime, Sea State Explorer, [location], read [date], [link]</i>. Please don't scrape the data in bulk. The underlying open datasets are free from the providers credited below.</p>
+  <h2 id="cite">Sharing and quoting</h2>
+  <p>Every result has its own link. Hit Copy link to this result and whoever opens it lands on the same point with the same months and limits. The PDF summary has the link on it too.</p>
+  <p>You're welcome to quote the explorer in your own work. Something like <i>Thrust Maritime, Sea State Explorer, [location], read [date], [link]</i> is all we ask. Please don't scrape the data in bulk. The open datasets underneath are free from the providers listed below.</p>
 
   <section class="cta">
-    <h2>Need more than a screening figure?</h2>
-    <p>This tool is the first step. When a job needs real numbers, we can put together a project specific metocean study, extreme value analysis and vessel response work.</p>
-    <p><a href="https://www.thrustm.com" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+    <h2>Need more than a first look?</h2>
+    <p>This tool gets you started. When a job needs firmer numbers, we can do a project specific metocean study, extreme value analysis and vessel response work.</p>
+    <p><a href="https://www.thrustm.com" target="_blank" rel="noopener">Get in touch at thrustm.com</a></p>
   </section>
 
-  <h2 id="licences">5. Data credits</h2>
+  <h2 id="licences">Data credits</h2>
+
+  <p>These are the providers we rely on, with the credit each one asks for.</p>
 
   <div class="attr">
     <p><span class="who">ERA5, Copernicus Climate Change Service (ECMWF), <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</span> Contains modified Copernicus Climate Change Service information. Hersbach, H. et al. (2023), ERA5 hourly data on single levels from 1940 to present, doi:10.24381/cds.adbb2d47. Neither the European Commission nor ECMWF is responsible for any use of this information.</p>

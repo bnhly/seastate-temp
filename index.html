@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Free monthly wave, wind, extreme sea state and weather window statistics for any offshore location, with a one page PDF summary.">
 <meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=40784cc8b4">
+<link rel="stylesheet" href="style.css?v=dd2776f2da">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -306,7 +306,8 @@
     </section>
 
     <footer class="tm-footer">
-      <p class="tm-footer-links"><a href="methodology.html">Methodology and sources</a> &middot;
+      <p class="tm-footer-links"><button type="button" class="tm-fb-open" id="tm-fb-open">Feedback or a suggestion</button> &middot;
+        <a href="methodology.html">Methodology and sources</a> &middot;
         <a href="locations/index.html">Sea state by location</a> &middot;
         <a href="llms.txt">llms.txt</a></p>
       <p id="tm-disclaimer"></p>
@@ -323,20 +324,43 @@
         <p class="tm-src-more">Every derivation is written out on the <a href="methodology.html">methodology page</a>.</p>
       </details>
     </footer>
+    <dialog id="tm-fb" class="tm-fb" aria-labelledby="tm-fb-title">
+      <form id="tm-fb-form" method="dialog" novalidate>
+        <h2 id="tm-fb-title">Feedback or a suggestion</h2>
+        <p class="tm-fb-lead">Tell us what works, what does not, or what you would like the tool to do. It goes straight to the Thrust Maritime team.</p>
+        <label>Type
+          <select id="tm-fb-kind" name="kind">
+            <option>Feedback</option><option>Suggestion</option><option>Problem</option><option>Question</option>
+          </select></label>
+        <label>Message
+          <textarea id="tm-fb-msg" name="message" rows="5" maxlength="4000" required></textarea></label>
+        <div class="tm-fb-row">
+          <label>Name <span>(optional)</span><input id="tm-fb-name" name="name" type="text" maxlength="100" autocomplete="name"></label>
+          <label>Email <span>(optional, if you would like a reply)</span><input id="tm-fb-email" name="email" type="email" maxlength="150" autocomplete="email"></label>
+        </div>
+        <label class="tm-fb-trap" aria-hidden="true">Website<input id="tm-fb-web" name="website" type="text" tabindex="-1" autocomplete="off"></label>
+        <p class="tm-fb-note">The location you are looking at is sent with your message so we can see what you saw.</p>
+        <p id="tm-fb-status" class="tm-fb-status" role="status"></p>
+        <div class="tm-fb-acts">
+          <button type="button" id="tm-fb-cancel" class="tm-fb-btn2">Cancel</button>
+          <button type="submit" id="tm-fb-send" class="tm-fb-btn">Send</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 </div>
 
 <div class="tm-tip" id="tm-tip" hidden></div>
 
-<script>window.TM_BUILD="40784cc8b4";</script>
+<script>window.TM_BUILD="dd2776f2da";</script>
 <script>window.TM_CONFIG_OVERRIDES=Object.assign(window.TM_CONFIG_OVERRIDES||{},{dataBase:"https://seastate-data.thrustm.com/data/"});</script>
-<script src="coastline.js?v=40784cc8b4"></script>
-<script src="borders.js?v=40784cc8b4"></script>
-<script src="places.js?v=40784cc8b4"></script>
-<script src="data.js?v=40784cc8b4"></script>
-<script src="map.js?v=40784cc8b4"></script>
-<script src="chart.js?v=40784cc8b4"></script>
-<script src="report.js?v=40784cc8b4"></script>
-<script src="app.js?v=40784cc8b4"></script>
+<script src="coastline.js?v=dd2776f2da"></script>
+<script src="borders.js?v=dd2776f2da"></script>
+<script src="places.js?v=dd2776f2da"></script>
+<script src="data.js?v=dd2776f2da"></script>
+<script src="map.js?v=dd2776f2da"></script>
+<script src="chart.js?v=dd2776f2da"></script>
+<script src="report.js?v=dd2776f2da"></script>
+<script src="app.js?v=dd2776f2da"></script>
 </body>
 </html>

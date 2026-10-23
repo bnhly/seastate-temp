@@ -615,3 +615,27 @@ html, body {
    visible data credit (OSM and CC BY ask for one in view, not folded away) */
 .tm-res-disc { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .tm-credit { font-size: 12px; color: var(--muted); }
+
+/* feedback dialog (23 Oct 26) */
+.tm-fb-open { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; }
+.tm-fb { border: 1px solid var(--border, rgba(11,11,11,0.1)); border-radius: 10px; padding: 0; max-width: 520px; width: calc(100% - 32px); color: var(--ink, #0b0b0b); background: var(--surface, #fcfcfb); box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.tm-fb::backdrop { background: rgba(20, 48, 74, 0.35); }
+.tm-fb form { padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+.tm-fb h2 { margin: 0; font-size: 18px; }
+.tm-fb-lead, .tm-fb-note { margin: 0; font-size: 13px; color: var(--ink-2, #52514e); }
+.tm-fb-note { color: var(--muted); font-size: 12px; }
+.tm-fb label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.tm-fb label span { font-weight: 400; color: var(--muted); }
+.tm-fb input, .tm-fb select, .tm-fb textarea { font: inherit; font-weight: 400; padding: 7px 9px; border: 1px solid var(--baseline, #c3c2b7); border-radius: 6px; background: #fff; color: inherit; }
+.tm-fb textarea { resize: vertical; min-height: 96px; }
+.tm-fb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 520px) { .tm-fb-row { grid-template-columns: 1fr; } }
+.tm-fb-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.tm-fb-status { margin: 0; font-size: 13px; min-height: 1em; }
+.tm-fb-status.ok { color: #1d7a3a; }
+.tm-fb-status.err { color: #b5341c; }
+.tm-fb-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.tm-fb-btn, .tm-fb-btn2 { font: inherit; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.tm-fb-btn { background: var(--accent-deep, #14304a); color: #fff; border: 1px solid var(--accent-deep, #14304a); }
+.tm-fb-btn:disabled { opacity: 0.6; cursor: default; }
+.tm-fb-btn2 { background: none; border: 1px solid var(--baseline, #c3c2b7); color: inherit; }

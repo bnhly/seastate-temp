@@ -9,6 +9,9 @@
     website: "https://www.thrustm.com",
     logoSrc: "assets/thrust-maritime-logo.png",
     dataBase: "data/",
+    /* feedback form: an API Server Script on the ERP site emails it
+       (seastate/erp/tm_seastate_feedback.py); null hides the form */
+    feedbackUrl: "https://erpnext.thrustm.com/api/method/tm_seastate_feedback",
     pdfLibSrc: "vendor/pdf-lib.min.js",
     bathySrc: "bathy.js",
     coastBase: "coast/",
@@ -618,6 +621,52 @@
     if (!p || !t) return;
     p.textContent = pct;
     t.textContent = txt;
+  }
+
+  /* Feedback form. Posted as a simple form request with no-cors, so the ERP
+     site needs no CORS set-up; the page cannot read the answer, so a
+     request that leaves the browser counts as sent and only a network
+     failure is reported. */
+  function initFeedback() {
+    var dlg = $("tm-fb"), open = $("tm-fb-open"), form = $("tm-fb-form");
+    if (!dlg || !open || !form) return;
+    if (!cfg.feedbackUrl || typeof dlg.showModal !== "function") { open.hidden = true; return; }
+    var st = $("tm-fb-status"), send = $("tm-fb-send");
+    open.addEventListener("click", function () {
+      st.textContent = ""; st.className = "tm-fb-status";
+      send.disabled = false; send.textContent = "Send";
+      dlg.showModal();
+      $("tm-fb-msg").focus();
+    });
+    $("tm-fb-cancel").addEventListener("click", function () { dlg.close(); });
+    $("tm-fb-msg").addEventListener("input", function () {
+      if (st.className.indexOf("err") >= 0) { st.textContent = ""; st.className = "tm-fb-status"; }
+    });
+    dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var msg = $("tm-fb-msg").value.trim();
+      if (msg.length < 3) { st.textContent = "Please write a message first."; st.className = "tm-fb-status err"; return; }
+      var body = new URLSearchParams();
+      body.set("kind", $("tm-fb-kind").value);
+      body.set("message", msg);
+      body.set("name", $("tm-fb-name").value.trim());
+      body.set("email", $("tm-fb-email").value.trim());
+      body.set("website", $("tm-fb-web").value);
+      body.set("page", window.location.href);
+      send.disabled = true; send.textContent = "Sending...";
+      fetch(cfg.feedbackUrl, { method: "POST", mode: "no-cors", body: body }).then(function () {
+        st.textContent = "Thank you. Your message has been sent.";
+        st.className = "tm-fb-status ok";
+        $("tm-fb-msg").value = "";
+        send.textContent = "Sent";
+        setTimeout(function () { if (dlg.open) dlg.close(); }, 2200);
+      }, function () {
+        st.textContent = "That did not send. Check your connection and try again, or email us via www.thrustm.com.";
+        st.className = "tm-fb-status err";
+        send.disabled = false; send.textContent = "Send";
+      });
+    });
   }
 
   function initStickyAnswer() {
@@ -1864,6 +1913,7 @@
   /* ---------- boot ---------- */
 
   function boot(provider, isDemo) {
+    initFeedback();
     state.provider = provider;
     state.isDemo = isDemo;
     setBanner();

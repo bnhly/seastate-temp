@@ -533,7 +533,7 @@
     rows.push(["Coastline",
       "GSHHG (Wessel and Smith, 1996) at close zoom, Natural Earth 1:50m land at world scale",
       "Digitised shorelines from the World Vector Shoreline and World Data Bank II, made hierarchical and self consistent.",
-      "Map drawing at every zoom and the land test that cuts pipelines to their offshore runs."]);
+      "Map drawing at every zoom."]);
     if (state.curAttribution) {
       rows.push(["Tidal streams",
         "Copernicus Marine global hourly merged surface currents, barotropic tidal component",
@@ -558,13 +558,12 @@
     }
     if (state.assetsAttribution) {
       rows.push(["Oil and gas assets",
-        "Regulator registers (BSEE and BOEM, Norwegian Offshore Directorate, Geoscience Australia, ANP and " +
-        "others), Global Energy Monitor trackers, OpenStreetMap",
+        "Regulator registers (BSEE and BOEM, Norwegian Offshore Directorate, Geoscience Australia), " +
+        "Global Energy Monitor trackers, OpenStreetMap",
         "Operator filings and surveyed positions held by the regulators; public records compiled by the " +
         "trackers; volunteer mapping from imagery and surveys in OpenStreetMap.",
-        "Merged with regulator records winning, wells and platforms collapsed per 2 km cell, pipelines " +
-        "deduplicated within their corridor and cut to offshore runs; the in-service filter reads each " +
-        "register's own status words."]);
+        "Platforms, wells, fields and pipelines on the map, and the nearest asset to your point. " +
+        "Positions are indicative, never for navigation."]);
     }
     return rows;
   }

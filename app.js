@@ -538,9 +538,8 @@
       rows.push(["Tidal streams",
         "Copernicus Marine global hourly merged surface currents, barotropic tidal component",
         "Global tide model solution constrained by satellite altimetry and tide gauges, hourly on a 1/12 degree grid.",
-        "Harmonic analysis of 90 days with six constituents and nodal factors; springs and neaps from a 35 day " +
-        "reconstruction; slack and turn statistics; surface and bottom-metre values through the 1/7 power " +
-        "profile of DNVGL-RP-C205."]);
+        "Typical peak stream at springs and neaps, how long slack water lasts, and the stream at the " +
+        "surface and near the seabed."]);
       rows.push(["Background currents",
         "GLORYS12 ocean reanalysis, Mercator Ocean International via the Copernicus Marine Service",
         "1/12 degree ocean model reanalysis assimilating satellite sea level and sea surface temperature, sea ice, " +

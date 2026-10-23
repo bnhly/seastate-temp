@@ -115,16 +115,18 @@
        the scale is chosen from the data instead of the percentage ladder. */
     var unit = spec.unit === undefined ? "%" : spec.unit;
     var caps = unit === "%" ? [4, 8, 12, 20, 40, 60, 80, 100]
-                            : [1, 2, 4, 5, 8, 10, 16, 20, 40, 60, 100];
+                            : [1, 2, 4, 8, 12, 16, 20, 40, 60, 80, 100];
+    if (spec.max) caps = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128];
     var niceMax = caps[caps.length - 1];
-    for (i = 0; i < caps.length; i++) { if (vmax * 1.06 <= caps[i]) { niceMax = caps[i]; break; } }
+    var target = spec.max ? Math.max(spec.max, vmax) : vmax * 1.06;
+    for (i = 0; i < caps.length; i++) { if (target <= caps[i]) { niceMax = caps[i]; break; } }
     function Y(p) { return y0 + mb + (p / niceMax) * ih; }
     var g, lbl;
     for (g = 0; g <= 4; g++) {
       var gv = niceMax * g / 4;
       page.drawLine({ start: { x: x0 + ml, y: Y(gv) }, end: { x: x0 + ml + iw, y: Y(gv) },
         thickness: 0.5, color: rgb(P, g === 0 ? COL.baseline : COL.grid) });
-      lbl = (niceMax < 20 && gv % 1 ? gv.toFixed(1) : String(Math.round(gv))) + unit;
+      lbl = (gv % 1 ? (gv * 10 % 1 ? gv.toFixed(2) : gv.toFixed(1)) : String(Math.round(gv))) + unit;
       page.drawText(lbl, { x: x0 + ml - 4 - fonts.reg.widthOfTextAtSize(lbl, 6.5), y: Y(gv) - 2.2,
         size: 6.5, font: fonts.reg, color: rgb(P, COL.muted) });
     }
@@ -135,6 +137,11 @@
       if (v !== null) {
         page.drawRectangle({ x: cx - barW / 2, y: Y(0), width: barW, height: Math.max(0.4, (v / niceMax) * ih),
           color: rgb(P, spec.selected[i] ? COL.series : COL.dim) });
+        if (spec.labels) {
+          var vl = v >= 10 ? String(Math.round(v)) : (Math.round(v * 10) / 10).toString();
+          page.drawText(vl, { x: cx - fonts.reg.widthOfTextAtSize(vl, 6.5) / 2,
+            y: Y(0) + (v / niceMax) * ih + 2.5, size: 6.5, font: fonts.reg, color: rgb(P, COL.ink2) });
+        }
       }
       var mchar = spec.monthNames[i][0];
       page.drawText(mchar, { x: cx - fonts.reg.widthOfTextAtSize(mchar, 6.5) / 2, y: y0 + mb - 10,
@@ -312,7 +319,8 @@
     }
     put("1000", x0 + labW + tpNb * colW, totW, true, COL.ink2);
     y -= rowH;
-    page.drawText("wave height (m) down, peak period (s) across, parts per thousand of the time",
+    page.drawText("wave height (m) down, peak period (s) across, parts per thousand of the time; " +
+      "a longer record pooled over 1 degree, so shares can differ a little from page 1",
       { x: x0, y: y - 7, size: 6, font: fonts.reg, color: rgb(P, COL.muted) });
     return y - 14;
   }
@@ -348,8 +356,10 @@
           color: rgb(P, COL.series) });
       }
       if (i % 2 === 0) {
+        /* on the band's left EDGE: "2" under the start of the 2-3 s bar,
+           not its middle, which read as the bar's own value */
         var lb = String(spec.t0 + i * spec.step);
-        page.drawText(lb, { x: x0 + i * bw + bw / 2 - fonts.reg.widthOfTextAtSize(lb, 6) / 2,
+        page.drawText(lb, { x: x0 + i * bw - fonts.reg.widthOfTextAtSize(lb, 6) / 2,
           y: y0 - 8, size: 6, font: fonts.reg, color: rgb(P, COL.muted) });
       }
     }
@@ -457,7 +467,7 @@
               pv = state.combined.p[i];
               txt1 = state.thresholds[i].toFixed(1) + " m";
               txt2 = pv === null ? "no data" : window.TMData.fmtPct(pv).replace("<", "under ");
-              txt3 = pv === null ? "-" : (pv * 0.3044).toFixed(pv * 0.3044 < 3 ? 1 : 0);
+              txt3 = window.TMData.fmtDays(pv);
               page.drawText(txt1, { x: tx, y: ry, size: 8, font: fonts.reg, color: rgb(P, COL.ink) });
               page.drawText(txt2, { x: col2 - fonts.reg.widthOfTextAtSize(txt2, 8), y: ry, size: 8, font: fonts.reg, color: rgb(P, COL.ink) });
               page.drawText(txt3, { x: col3 + 70 - fonts.reg.widthOfTextAtSize(txt3, 8), y: ry, size: 8, font: fonts.reg, color: rgb(P, COL.ink) });
@@ -488,6 +498,10 @@
               while (rest.length) {
                 var take = rest.length;
                 while (take > 1 && fonts.reg.widthOfTextAtSize(rest.slice(0, take), 6.8) > nw) take--;
+                if (take < rest.length) {
+                  var brk = Math.max(rest.lastIndexOf("&", take - 1), rest.lastIndexOf(",", take - 1));
+                  if (brk > take * 0.5) take = brk + 1;
+                }
                 page.drawText(rest.slice(0, take),
                   { x: nx, y: noteY, size: 6.8, font: fonts.reg, color: rgb(P, COL.muted) });
                 noteY -= 8.8;
@@ -514,13 +528,18 @@
                 snap.push(row[0] + ": combined " + row[4] + " (tidal " + row[1] + ", wind-driven " + row[2] + ", background " + row[3] + ")");
               });
             }
-            if (snap.length) {
+            /* an item is drawn only when it ends clear of the footer rule,
+               and the heading only when at least one item follows it: the
+               heading printed alone, or an item ran through the footer
+               (launch review, 23 Oct 26). Every line is on page 2 to 4 too. */
+            var snapFloor = 86;
+            if (snap.length && noteY - 17 - wrapText(fonts.reg, snap[0], 7.5, nw).length * 9.5 >= snapFloor) {
               noteY -= 6;
               page.drawText("SITE SNAPSHOT", { x: nx, y: noteY, size: 7, font: fonts.bold, color: rgb(P, COL.muted) });
               noteY -= 11;
               var si;
               for (si = 0; si < snap.length; si++) {
-                if (noteY < 96) break;   /* stay clear of the footer rule */
+                if (noteY - wrapText(fonts.reg, snap[si], 7.5, nw).length * 9.5 < snapFloor) continue;
                 noteY = drawWrapped(page, fonts.reg, snap[si], nx, noteY, 7.5, nw, 9.5, rgb(P, COL.ink2)) - 4;
               }
             }
@@ -532,6 +551,9 @@
             var endY = drawWrapped(page, fonts.reg, disc, M, fy - 11, 6.6, PAGE_W - 2 * M, 8.2, rgb(P, COL.muted));
             page.drawText(state.cfg.companyName + " | " + state.cfg.website.replace(/^https?:\/\//, ""),
               { x: M, y: endY - 4, size: 7.5, font: fonts.bold, color: rgb(P, COL.navy) });
+            /* page 1's disclaimer runs four lines and the page number sat on
+               top of it: it goes on the company line instead */
+            var p1NumY = endY - 4;
 
             /* ---------- page 2: month by month ---------- */
             var hdrSub = state.latLonLabel + "  " + monthListLabel(state);
@@ -547,13 +569,16 @@
                every month against every threshold, which is what someone
                planning a campaign window actually reads. */
             y2 = sectionHead(P, p2, fonts, M, y2, "Percentage of time above each wave height, by month");
-            var thr = state.thresholds, nT = Math.min(thr.length, 9);
+            /* every threshold page 1 shows (it stopped at 4.5 m, so a 5 or
+               6 m limit had no column here) */
+            var thr = state.thresholds, nT = Math.min(thr.length, 11);
+            var limTi = thr.indexOf(state.limit);
             var cw = (PAGE_W - 2 * M - 46) / nT;
             var hx = M + 46, ti, mi;
             for (ti = 0; ti < nT; ti++) {
               var th = thr[ti].toFixed(1);
               p2.drawText(th, { x: hx + ti * cw + cw / 2 - fonts.bold.widthOfTextAtSize(th, 7) / 2,
-                y: y2, size: 7, font: fonts.bold, color: rgb(P, COL.ink2) });
+                y: y2, size: 7, font: fonts.bold, color: rgb(P, ti === limTi ? COL.navy : COL.ink2) });
             }
             /* The unit goes in the empty left cell of the header row, on the
                same baseline as the threshold numbers it belongs to. It was
@@ -566,7 +591,7 @@
             y2 -= 11;
             for (mi = 0; mi < 12; mi++) {
               var on = state.selectedFlags[mi];
-              var mcol = on ? COL.ink : COL.dim;
+              var mcol = on ? COL.ink : COL.muted;
               p2.drawText(state.monthNames[mi], { x: M, y: y2, size: 7.5,
                 font: on ? fonts.bold : fonts.reg, color: rgb(P, mcol) });
               for (ti = 0; ti < nT; ti++) {
@@ -586,11 +611,11 @@
             y2 -= 24;
 
             if (state.windows) {
-              y2 = sectionHead(P, p2, fonts, M, y2, "Weather windows by month: spells below " +
-                state.windows.thr + " m lasting " + state.windows.dur + " h or more");
+              y2 = sectionHead(P, p2, fonts, M, y2, "Weather windows by month: separate " +
+                state.windows.dur + " h periods with Hs below " + state.windows.thr + " m");
               drawBarsPdf(P, p2, fonts, M, y2 - 130, PAGE_W - 2 * M, 130,
                 { values: state.windows.values, selected: state.selectedFlags,
-                  monthNames: state.monthNames, unit: "" });
+                  monthNames: state.monthNames, unit: "", max: state.windows.max, labels: true });
               y2 = y2 - 130 - 14;
               if (state.windowsLabel) {
                 drawWrapped(p2, fonts.reg, state.windowsLabel, M, y2, 7.5, PAGE_W - 2 * M, 9.5, rgb(P, COL.ink2));
@@ -604,7 +629,7 @@
 
             if (state.rose || state.vrose) {
               y3 = sectionHead(P, p3, fonts, M, y3, "Direction");
-              var roseR = 62, roseY = y3 - roseR - 12;
+              var roseR = 62, roseY = y3 - roseR - 24;
               var both = !!(state.rose && state.vrose);
               function placeRose(cx, title, data) {
                 var tw2 = fonts.bold.widthOfTextAtSize(title, 8);
@@ -760,7 +785,7 @@
               var lbl2 = "Page " + (pi2 + 1) + " of " + pages.length;
               pages[pi2].drawText(lbl2, {
                 x: PAGE_W - M - fonts.reg.widthOfTextAtSize(lbl2, 7),
-                y: 60, size: 7, font: fonts.reg, color: rgb(P, COL.muted)
+                y: pi2 === 0 ? p1NumY : 60, size: 7, font: fonts.reg, color: rgb(P, COL.muted)
               });
             }
 

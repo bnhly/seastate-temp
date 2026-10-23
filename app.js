@@ -14,10 +14,10 @@
     coastBase: "coast/",
     pdfDelivery: "download",   /* "inline" in the sandboxed preview build */
     limitDefault: 2,
-    disclaimerLive: "Values are long term climatological estimates for open water derived from " +
-      "reanalysis data. They are not forecasts, may underestimate extreme conditions including " +
-      "tropical cyclones, and are unreliable close to coastlines and in sheltered or shallow " +
-      "water. Not for design, navigation or operational decision making. No warranty is given.",
+    disclaimerLive: "Values are long term statistics for open water, from reanalysis model data. " +
+      "They are not forecasts, can understate extremes including tropical cyclones, and are " +
+      "unreliable near coasts and in sheltered or shallow water. Use them for early planning only, " +
+      "not for navigation, engineering design or go / no-go decisions. No warranty is given.",
     disclaimerDemo: "DEMONSTRATION MODE: every number shown is synthetic, generated from a " +
       "simplified parametric model so the tool can be evaluated before the real dataset is " +
       "built. Do not use these values for anything.",
@@ -93,11 +93,48 @@
     return out;
   }
 
-  function monthsLabel() {
-    var sel = monthIdxList();
+  /* "Dec to Feb", "Jun and Jul", "Mar, Jun to Aug": runs of months as
+     ranges, wrapping past December (a Dec-Jan pick read "Jan, Dec") */
+  function monthRuns(list) {
+    var on = [], i, out = [], start, len;
+    for (i = 0; i < 12; i++) on.push(list.indexOf(i) >= 0);
+    if (list.length === 12) return "Jan to Dec";
+    var s0 = 0;
+    while (on[s0]) s0++;                       /* start just after a gap */
+    for (i = 1; i <= 12; i++) {
+      var m = (s0 + i) % 12;
+      if (on[m] && (start === undefined)) { start = m; len = 0; }
+      if (on[m]) len++;
+      if ((!on[m] || i === 12) && start !== undefined) {
+        var end = (start + len - 1) % 12;
+        out.push(len === 1 ? D.MONTH_NAMES[start]
+          : len === 2 ? D.MONTH_NAMES[start] + " and " + D.MONTH_NAMES[end]
+          : D.MONTH_NAMES[start] + " to " + D.MONTH_NAMES[end]);
+        start = undefined;
+      }
+    }
+    return out.join(", ");
+  }
+
+  function monthsLabel(list) {
+    var sel = list || monthIdxList();
     if (sel.length === 12) return "across the whole year";
     if (sel.length === 0) return "(no months selected)";
-    return "in " + sel.map(function (m) { return D.MONTH_NAMES[m]; }).join(", ");
+    return "in " + monthRuns(sel);
+  }
+
+  /* Sea ice: a selection of the whole year at an ice cell only has wave data
+     for the open-water months, so the text must say so, not "whole year". */
+  function dataMonthsLabel(combined, sel) {
+    var used = combined && combined.usedMonths ? combined.usedMonths : sel;
+    if (!used.length || used.length >= sel.length) return monthsLabel(sel);
+    return "in the months with open water (" + monthRuns(used) + ")";
+  }
+  function noDataNote(combined, sel) {
+    var used = combined && combined.usedMonths ? combined.usedMonths : sel;
+    if (!used.length || used.length >= sel.length) return "";
+    var miss = sel.filter(function (m) { return used.indexOf(m) < 0; });
+    return " No wave data in " + monthRuns(miss) + ", usually because of sea ice.";
   }
 
   /* ---------- UI wiring ---------- */
@@ -299,7 +336,8 @@
       "Depth contours and depth bands: Natural Earth 1:10m bathymetry (public domain).",
       "Coastline: Wessel, P., and W. H. F. Smith, A Global Self-consistent, Hierarchical, " +
       "High-resolution Shoreline Database, J. Geophys. Res., 101, 8741-8743, 1996 (GSHHG, at " +
-      "close zoom) and Natural Earth 1:50m land (public domain, at world scale)."];
+      "close zoom; GSHHG is distributed under the GNU Lesser General Public License v3) and Natural " +
+      "Earth 1:50m land (public domain, at world scale)."];
     parts.push(state.depthAttribution ||
       "Water depths: ETOPO 2022 Global Relief Model, NOAA National Centers for " +
       "Environmental Information (public domain).");
@@ -308,6 +346,12 @@
     /* the currents layer's Copernicus Marine sentence was collected here
        but never printed (found 4 Sep 26 while building the sources table) */
     if (state.curAttribution) parts.push(state.curAttribution);
+    var jdA = state.jointFetch && state.jointFetch.key === state.jointKey ? state.jointFetch.val : null;
+    if (jdA && jdA.period) {
+      parts.push("Wave height against peak period table: contains modified Copernicus Climate Change " +
+        "Service information [" + String(jdA.period).replace(/,.*$/, "") + "], ERA5 hourly data on single " +
+        "levels, pooled over 1.0 degree blocks.");
+    }
     return parts.join(" ");
   }
 
@@ -475,12 +519,12 @@
         "Atmospheric reanalysis that assimilates satellite radiances and winds, radiosondes, aircraft, " +
         "ships, buoys and land stations; 3 hourly values on a 0.5 degree grid.",
         "Monthly mean and top decile, direction rose in 12 sectors of 30 degrees, daily cycle by 3 hour " +
-        "slot of the local solar day, El Nino and La Nina split by NOAA ONI phase."]);
+        "slot of the local solar day" + (m.enso ? ", El Nino and La Nina split by NOAA ONI phase." : ".")]);
     }
     rows.push(["Water depth and contours",
       "ETOPO 2022 Global Relief Model, NOAA NCEI; Natural Earth 1:10m bathymetry for the world-scale contours",
       "Compiled bathymetry: ship soundings and multibeam surveys, gravity-derived depths from satellite " +
-      "altimetry, coastal lidar; 15 arc second grid.",
+      "altimetry, coastal lidar; used here at 60 arc seconds.",
       "Depth at the data point from a 0.1 degree block mean, fine contours chosen from the depths in view, " +
       "depth bands at world scale; the depth the current profile and the tidal bottom-metre figure use."]);
     rows.push(["Coastline",
@@ -640,6 +684,8 @@
       $("tm-hint").textContent = (err && err.message) ? err.message : "No data near that point.";
       $("tm-results").hidden = true;
       $("tm-side-results").hidden = true;
+      /* the URL still held the last good result, so a reload brought it back */
+      try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e2) {}
     });
   }
 
@@ -691,7 +737,8 @@
     /* the source, period and sample count left this line on 4 Sep 26 (Ben):
        they live in the footer's sources table and in the PDF's data basis */
     var basis = "Data point " + D.fmtLatLon(res.cell.lat, res.cell.lon) +
-      " (" + res.cell.res + "\u00B0 grid), " + res.distanceKm + " km from your click";
+      " (" + res.cell.res + "\u00B0 grid), " + res.distanceKm + " km from your click" +
+      (res.distanceKm > 50 ? ". That is the nearest open-water cell; conditions at your point may differ" : "");
     $("tm-basis").textContent = basis;
 
     /* depth + nearest asset context line: exact ETOPO depth when deployed,
@@ -805,7 +852,7 @@
     /* extreme sea states: annual percentile levels + the statistically
        roughest calendar month. Site facts, independent of the selection. */
     var extEl = $("tm-extremes");
-    var ext = D.extremesSummary(res, sel);
+    var ext = combined.usedMonths && combined.usedMonths.length ? D.extremesSummary(res, sel) : null;
     state.lastExtremes = null;
     extEl.hidden = true;
     if (ext) {
@@ -867,7 +914,7 @@
           D.MONTH_NAMES[hiM] + "), including polar " +
           (dl[loM].hours <= 0 ? "night" : "day") + " conditions.";
       } else if (loM === hiM) {
-        line = "Daylight in " + D.MONTH_NAMES[loM] + ": " + dl[loM].hours.toFixed(1) +
+        line = "Daylight " + (sel.length === 1 ? "in " + D.MONTH_NAMES[loM] : monthsLabel()) + ": " + dl[loM].hours.toFixed(1) +
           " h, sun up about " + D.fmtSolarTime(dl[loM].rise) + " to " +
           D.fmtSolarTime(dl[loM].set) + " local solar time; " +
           (24 - dl[loM].hours).toFixed(1) + " h of darkness.";
@@ -896,8 +943,8 @@
     } else {
       big.textContent = fmtLimitPct(lim);
       sub.textContent = "of the time, significant wave height exceeds " + state.limit +
-        " m at this location " + monthsLabel() + ". That is roughly " +
-        (lim.p * 0.3044).toFixed(lim.p * 0.3044 < 3 ? 1 : 0) + " days per month on average.";
+        " m at this location " + dataMonthsLabel(combined, sel) + ". That is roughly " +
+        D.fmtDays(lim.p) + " days per month on average." + noDataNote(combined, sel);
     }
     head.appendChild(big);
     head.appendChild(sub);
@@ -1096,7 +1143,7 @@
         html += "<td>no data</td><td>-</td>";
       } else {
         html += "<td>" + D.fmtPct(pv).replace("<", "&lt;") + "</td>" +
-          "<td>" + (pv * 0.3044).toFixed(pv * 0.3044 < 3 ? 1 : 0) + "</td>";
+          "<td>" + D.fmtDays(pv) + "</td>";
       }
       html += "</tr>";
     }
@@ -1104,6 +1151,7 @@
     tbl.innerHTML = html;
 
     $("tm-pdf").disabled = (lim.p === null || sel.length === 0);
+    if ($("tm-sticky-pdf")) $("tm-sticky-pdf").disabled = $("tm-pdf").disabled;
     state.lastCombined = combined;
     state.lastLimitP = lim;
     state.lastMonthly = monthly;
@@ -1163,38 +1211,46 @@
       selD.value = String(state.winDur);
     }
     var thr = w.thr[state.winThr], dur = w.edges[state.winDur];
-    var vals = D.windowsPerMonth(res, state.winThr, state.winDur);
-    state.pdfWindows = { values: vals, thr: thr, dur: dur };
+    /* Working periods, not spells (Ben, 23 Oct 26): how many separate
+       D-hour periods below the threshold a typical month holds. The spell
+       count showed about 3 a month at a calm site (one per 240 h cut). */
+    var vals = D.windowPeriodsPerMonth(res, state.winThr, state.winDur, state.provider.thresholds);
+    var maxPer = Math.floor(31 * 24 / dur);
+    state.pdfWindows = { values: vals, thr: thr, dur: dur, max: maxPer };
     window.TMCharts.renderWindows($("tm-win"), {
       values: vals,
       selected: state.monthsOn.slice(),
       monthNames: D.MONTH_NAMES,
-      thr: thr, dur: dur
+      thr: thr, dur: dur, max: maxPer
     });
-    var sum = 0, any = false;
+    var sum = 0, cnt = 0, low = -1;
     for (i = 0; i < sel.length; i++) {
-      if (vals[sel[i]] !== null) { sum += vals[sel[i]]; any = true; }
+      if (vals && vals[sel[i]] !== null) {
+        sum += vals[sel[i]]; cnt++;
+        /* fewest as a share of the month: February is not the roughest
+           month just for being short */
+        if (low < 0 || vals[sel[i]] / D.MONTH_DAYS[sel[i]] < vals[low] / D.MONTH_DAYS[low]) low = sel[i];
+      }
     }
     var sumEl = $("tm-win-sum");
-    if (any && sel.length) {
-      var nTxt = sum >= 10 ? String(Math.round(sum)) : (Math.round(sum * 10) / 10).toString();
-      /* the tracker cuts an unbroken calm every 240 h and counts each cut
-         once, so a site that is calm nearly all the time shows about three
-         spells a month by construction. Pair the count with the share of
-         time below the limit and say the cut, or "38 spells" reads as
-         weather at a site that has none. */
-      var combW = D.combineMonths(res, sel, state.provider.thresholds);
-      var aboveW = D.interpExceedance(state.provider.thresholds, combW.p, thr);
-      var belowPct = (aboveW && aboveW.p !== null) ? 100 - aboveW.p : null;
-      var belowTxt = belowPct === null ? ""
-        : (belowPct >= 99.5
-          ? " The sea is below " + thr + " m nearly all of the time in these months."
-          : " The sea is below " + thr + " m about " + Math.round(belowPct) + "% of the time in these months.");
-      state.lastWindows = "Weather windows " + monthsLabel() + ": a typical year gives about " +
-        nTxt + " spell" + (sum === 1 ? "" : "s") + " of " + dur + " h or more below " + thr + " m." +
-        belowTxt + " A calm running past 240 h is counted once per 240 h.";
-      sumEl.textContent = state.lastWindows;
+    function nW(v) { return v >= 10 ? String(Math.round(v)) : (Math.round(v * 10) / 10).toString(); }
+    if (cnt) {
+      var avg = sum / cnt;
+      var txtW = avg < 0.05
+        ? "Weather windows " + monthsLabel() + ": a typical month has almost no separate " + dur +
+          " h periods with significant wave height below " + thr + " m"
+        : "Weather windows " + monthsLabel() + ": a typical month fits about " + nW(avg) +
+          " separate " + dur + " h period" + (Math.round(avg * 10) === 10 ? "" : "s") +
+          " with significant wave height below " + thr + " m";
+      if (cnt > 1 && vals[low] / D.MONTH_DAYS[low] * 30.4 < avg - 2) {
+        txtW += ", fewest in " + D.MONTH_NAMES[low] + " (about " + nW(vals[low]) + ")";
+      }
+      txtW += ". Periods do not overlap, so a 30 day month holds at most " +
+        Math.floor(30 * 24 / dur) + ".";
+      state.lastWindows = txtW;
+      sumEl.textContent = txtW;
     } else {
+      state.lastWindows = null;
       sumEl.textContent = "";
     }
   }
@@ -1500,7 +1556,9 @@
   }
 
   function applyShareState(st) {
-    if (st.months) setMonths(st.months);
+    /* a link without m / h means the defaults, also in an already open tab */
+    setMonths(st.months || [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+    if (st.limit === null) $("tm-limit").value = String(cfg.limitDefault);
     if (st.limit !== null) $("tm-limit").value = String(st.limit);
     if (st.wt !== null || st.wd !== null) state.pendingWin = { thr: st.wt, dur: st.wd };
     scheduleHeat();
@@ -1637,7 +1695,7 @@
       var nS = s.storms >= 10 ? Math.round(s.storms) : (Math.round(s.storms * 10) / 10);
       bits.push("an average season brings " + nS +
         (s.exact ? " storm" + (s.storms === 1 ? "" : "s") : " storm-month" + (s.storms === 1 ? "" : "s")) +
-        " inside " + cyc.radii[ri].toLocaleString() + " nm during these months (" +
+        " inside " + cyc.radii[ri].toLocaleString() + " nm" + (sel.length === 12 ? "" : " during these months") + " (" +
         (Math.round(s.days * 10) / 10) + " storm-day" + (s.days === 1 ? "" : "s") +
         (s.exact ? "" : "; a storm spanning two months counts in each") + ")");
     } else {
@@ -1750,7 +1808,8 @@
         (state.lastCombined.nTotal ? ", " + state.lastCombined.nTotal.toLocaleString() + " samples for the selected months" : ""),
       headlineBig: fmtLimitPct(lim),
       headlineSub: "of the time, significant wave height exceeds " + state.limit + " m at this location " +
-        monthsLabel() + " (roughly " + (lim.p * 0.3044).toFixed(lim.p * 0.3044 < 3 ? 1 : 0) + " days per month).",
+        dataMonthsLabel(state.lastCombined, sel) + " (roughly " + D.fmtDays(lim.p) + " days per month)." +
+        noDataNote(state.lastCombined, sel),
       depthLabel: state.lastDepth,
       nearestLabel: state.lastNearest ? state.lastNearest + (assetsAreDemo() ? " (DEMO asset)" : "") : null,
       meanHs: state.lastMeanHs === undefined ? null : state.lastMeanHs,
@@ -1880,7 +1939,11 @@
       state.map.setZoomWindowMode($("tm-zoom-win").getAttribute("aria-pressed") !== "true");
     });
     buildMonthChips();
-    $("tm-limit").addEventListener("change", renderResults);
+    $("tm-limit").addEventListener("change", function () {
+      var used = limitValue();
+      if (parseFloat($("tm-limit").value) !== used) $("tm-limit").value = String(used);
+      renderResults();
+    });
     $("tm-limit").addEventListener("input", function () { clearTimeout(state.limTimer); state.limTimer = setTimeout(renderResults, 250); });
 
     $("tm-win-thr").addEventListener("change", function () {

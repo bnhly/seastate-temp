@@ -7,14 +7,14 @@
 ## What it answers
 
 - How often significant wave height exceeds a given level at a location, by calendar month and across the year
-- Mean wave height by month, typical peak period and direction, wind speed (mean and top decile), extreme sea states, counts of calm spells (weather windows), water depth, nearby oil and gas assets, tropical cyclone exposure
+- Mean wave height by month, typical peak period and direction, wind speed (mean and top decile), extreme sea states, weather windows (separate working periods per month below a wave height limit), water depth, nearby oil and gas assets, tropical cyclone exposure
 - A one page PDF summary and a shareable link for every result
 
 ## The data behind it
 
-- ERA5 reanalysis (ECMWF / Copernicus C3S), 2010-2024, 3 hourly, 0.5 degree grid. Values are the nearest grid cell to the chosen point, never interpolated; every result states the data point, its distance from the point, the grid and the sample count.
+- ERA5 reanalysis (ECMWF / Copernicus C3S), 2010-2024, 3 hourly, 0.5 degree grid. Values are the nearest grid cell to the chosen point, never interpolated between cells; every result states the data point, the grid and its distance from the chosen point, and the PDF adds the sample count.
 - Attribution: Contains modified Copernicus Climate Change Service information [2010-2024]. ERA5 hourly data on single levels (significant height of combined wind waves and swell). Neither the European Commission nor ECMWF is responsible for any use of this information.
-- These are climatological estimates, not forecasts. They are unreliable close to coastlines and in sheltered or shallow water and may underestimate extremes. Not for design, navigation or operational decisions.
+- These are long term statistics, not forecasts. They are unreliable near coasts and in sheltered or shallow water and can understate extremes. Early planning only, not for navigation, engineering design or go / no-go decisions.
 
 ## Citable pages
 

@@ -334,7 +334,7 @@
       period: "for layout evaluation only",
       attribution: "Demonstration mode: values are generated from a simplified parametric wave " +
         "climate model and are NOT real measurements or reanalysis. The production version is " +
-        "built from the ERA5 reanalysis (see seastate/README.md)."
+        "built from the ERA5 reanalysis (see the methodology page)."
     };
     this.thresholds = THRESHOLDS;
     this.ready = Promise.resolve(this);
@@ -481,7 +481,8 @@
           source: mf.source,
           sourceLabel: mf.source_label || mf.source,
           period: mf.period,
-          attribution: mf.attribution
+          attribution: mf.attribution,
+          enso: !!mf.enso
         };
         return self;
       });
@@ -535,7 +536,14 @@
         if (!tile) continue;
         for (c = 0; c < tile.lat.length; c++) {
           km = haversineKm(lat, lon, tile.lat[c], tile.lon[c]);
-          if (!best || km < best.km) best = { tile: tile, idx: c, km: km };
+          if (best && km >= best.km) continue;
+          /* a cell with no month of valid statistics (high Arctic ice) is
+             skipped, or the page printed "n/a" over extremes for it */
+          var anyM = false, mm2;
+          for (mm2 = 0; mm2 < 12 && !anyM; mm2++) {
+            if (tile.n[c][mm2] > 0 && tile.exc[c][mm2 * mf.thresholds.length] >= 0) anyM = true;
+          }
+          if (anyM) best = { tile: tile, idx: c, km: km };
         }
       }
       if (!best || best.km > (mf.max_snap_km || 350)) {
@@ -1714,6 +1722,56 @@
     return out;
   }
 
+  /* Weather windows as separate WORKING PERIODS: how many non-overlapping
+     D-hour periods with Hs below the threshold a typical month holds. A
+     calm month fits about 30 separate 24 h periods; the old spell count
+     showed about 3 there (one per 240 h cut), which read as "hardly any
+     weather windows" at the calmest site on the map (Ben, 23 Oct 26).
+
+     The tiles keep spells binned by duration, not their exact lengths, so
+     the hours inside spells of D or more are worked out as all the hours
+     below the threshold that month (from the exceedance) less the hours in
+     shorter spells (each short bin at the mean of the 3-hourly lengths it
+     can hold), clamped to what the long bins could possibly hold. Each
+     long spell then loses on average (D - 3) / 2 hours to the remainder
+     that does not fill a whole period (capped runs excepted). Checked
+     against an exact count on simulated 30 year records: mean error under
+     one period a month. Long-term average, per month,
+     counted in the month the spell started, never more than the month's
+     own hours allow. */
+  var WIN_BIN_MEAN_H = [3, 7.5, 16.5, 34.5, 58.5, 94.5, 180];
+  function windowPeriodsPerMonth(data, thrIdx, edgeIdx, thresholds) {
+    if (!data.windows || !data.windows.runs) return null;
+    var w = data.windows, D = w.edges[edgeIdx], thr = w.thr[thrIdx];
+    var lows = [0].concat(w.edges), out = [], m, b, bins, ex, calmH, shortH, longN, lo, hi, longH, v, monthH;
+    for (m = 0; m < 12; m++) {
+      if (!w.runs[m] || !w.runs[m][thrIdx] || !data.exc || !data.exc[m] || !data.n[m]) { out.push(null); continue; }
+      ex = interpExceedance(thresholds, data.exc[m], thr);
+      if (!ex || ex.p === null) { out.push(null); continue; }
+      bins = w.runs[m][thrIdx];
+      monthH = MONTH_DAYS[m] * 24;
+      calmH = Math.max(0, 100 - ex.p) / 100 * monthH;
+      shortH = 0; longN = 0; lo = 0; hi = 0;
+      for (b = 0; b < bins.length; b++) {
+        if (b <= edgeIdx) { shortH += bins[b] * WIN_BIN_MEAN_H[b]; continue; }
+        longN += bins[b];
+        lo += bins[b] * lows[b];
+        hi += bins[b] * (b < w.edges.length ? w.edges[b] : 240);
+      }
+      longH = Math.min(hi, Math.max(lo, calmH - shortH));
+      /* capped 240 h runs divide exactly and lose nothing; the top bin
+         is mostly caps in a calm month, so it is charged only for the
+         share of the month that is not calm */
+      var lossN = longN - (bins.length > w.edges.length ? bins[w.edges.length] : 0) * (calmH / monthH);
+      v = longH / D - lossN * (D - 3) / (2 * D);
+      var floorV = 0;
+      for (b = edgeIdx + 1; b < bins.length; b++) floorV += bins[b] * Math.floor(lows[b] / D);
+      v = Math.max(floorV, Math.min(v, longH / D, Math.floor(monthH / D)));
+      out.push(Math.round(Math.max(0, v) * 10) / 10);
+    }
+    return out;
+  }
+
   /* Day-weighted mean of the four background-current series over the
      selected months, plus the tide passthrough. */
   function curSummary(cur, months) {
@@ -1861,6 +1919,15 @@
     return { p: last[1], floor: true };
   }
 
+  /* "approx days per month" from a % of time. A share that rounds to 0.0
+     days next to "0.1%" read as a contradiction (launch review, 23 Oct 26). */
+  function fmtDays(p) {
+    if (p === null || p === undefined || isNaN(p)) return "-";
+    var d = p * 0.3044;
+    if (p > 0 && d < 0.05) return "under 0.1";
+    return d.toFixed(d < 3 ? 1 : 0);
+  }
+
   function fmtPct(p) {
     if (p === null || p === undefined || isNaN(p)) return "no data";
     if (p < 0.05) return "<0.1%";
@@ -1900,6 +1967,9 @@
     function bad(msg) { return { error: msg }; }
     if (!text || !String(text).trim()) return bad("Type a position first. " + HINT);
     var t = String(text).toUpperCase()
+      .replace(/[\u2212\u2013\u2014]/g, "-")         /* pasted minus and dashes */
+      .replace(/(^|[^\d])\.(\d)/g, "$10.$2")          /* .5 -> 0.5 */
+      .replace(/(\d)\s*[MS](?=[\s0-9.+-]|$)/g, "$1 ") /* 30m 15s unit letters */
       .replace(/[\u00B0\u00BA\u02DA]/g, " ")        /* degree signs */
       .replace(/(\d)\s*D(?=[\s0-9.+-]|$)/g, "$1 ")  /* 56d30 letter-degree */
       .replace(/[\u2032\u2019\u00B4`']/g, " ")      /* minute marks */
@@ -2023,6 +2093,8 @@
     extremesSummary: extremesSummary,
     windSummary: windSummary,
     windowsPerMonth: windowsPerMonth,
+    windowPeriodsPerMonth: windowPeriodsPerMonth,
+    fmtDays: fmtDays,
     curAt: curAt,
     curSummary: curSummary,
     cycAt: cycAt,

@@ -227,7 +227,17 @@
     for (r = 0; r < rings.length; r++) {
       ring = rings[r];
       p.moveTo(ring[0][0], mercY(ring[0][1]));
-      for (i = 1; i < ring.length; i++) p.lineTo(ring[i][0], mercY(ring[i][1]));
+      for (i = 1; i < ring.length; i++) {
+        /* an open line (contours, borders) must not stroke the cut edge a
+           ring carries along +-180 or a jump across it: it drew a straight
+           line down the date line near New Zealand */
+        if (!close && (Math.abs(ring[i][0] - ring[i - 1][0]) > 180 ||
+            (Math.abs(ring[i][0]) >= 179.99 && Math.abs(ring[i - 1][0]) >= 179.99))) {
+          p.moveTo(ring[i][0], mercY(ring[i][1]));
+        } else {
+          p.lineTo(ring[i][0], mercY(ring[i][1]));
+        }
+      }
       if (close) p.closePath();
     }
     return p;

@@ -5,11 +5,11 @@
   --surface: #fcfcfb;
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --muted: #898781;
+  --muted: #6b6964;
   --grid: #e1e0d9;
   --baseline: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
-  --accent: #2a78d6;
+  --accent: #1f66b8;
   --accent-deep: #14304a;
   --demo-bg: #fff4d6;
   --demo-border: #eda100;
@@ -610,3 +610,8 @@ html, body {
 .tm-src td { max-width: 340px; }
 .tm-src-licence { margin: 8px 0 2px; color: var(--ink-2); }
 .tm-src-more { margin: 4px 0 0; }
+
+/* launch review 23 Oct 26: a disclaimer where the numbers are read, and a
+   visible data credit (OSM and CC BY ask for one in view, not folded away) */
+.tm-res-disc { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.tm-credit { font-size: 12px; color: var(--muted); }

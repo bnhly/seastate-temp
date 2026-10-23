@@ -454,7 +454,7 @@
     var W = 430, H = 300, m = { l: 44, r: 10, t: 22, b: 36 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-      "aria-label": "Weather windows per month: calm spells below the chosen wave height lasting at least the chosen duration" });
+      "aria-label": "Weather windows per month: separate periods of the chosen length with wave height below the chosen limit" });
     container.appendChild(svg);
 
     var vmax = 0, i, anyData = false;
@@ -466,8 +466,11 @@
       return;
     }
     var caps = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128], niceMax = caps[caps.length - 1];
-    for (i = 0; i < caps.length; i++) { if (vmax * 1.06 <= caps[i]) { niceMax = caps[i]; break; } }
-    if (vmax * 1.06 > niceMax) niceMax = Math.ceil(vmax * 1.1);
+    /* a fixed scale up to the most periods a month can hold, so the bars
+       read as "how much of the month" and months compare at a glance */
+    var target = spec.max ? Math.max(spec.max, vmax) : vmax * 1.06;
+    for (i = 0; i < caps.length; i++) { if (target <= caps[i]) { niceMax = caps[i]; break; } }
+    if (target > niceMax) niceMax = Math.ceil(target * 1.1);
 
     function Y(p) { return m.t + (1 - p / niceMax) * ih; }
     var g, gv;
@@ -496,8 +499,8 @@
           " Q " + (x + barW) + " " + y + " " + (x + barW) + " " + (y + r) +
           " L " + (x + barW) + " " + (m.t + ih) + " Z";
         el("path", { d: d, fill: spec.selected[i] ? C.series : C.dim }, svg);
-        if (i === maxIdx && hgt > 2) {
-          txt(svg, cx, y - 5, (v % 1 ? v.toFixed(1) : v) + "", { "text-anchor": "middle", fill: C.ink2, "font-size": 10.5 });
+        if ((spec.max || i === maxIdx) && hgt >= 0) {
+          txt(svg, cx, y - 5, (v >= 10 ? Math.round(v) : (v % 1 ? v.toFixed(1) : v)) + "", { "text-anchor": "middle", fill: C.ink2, "font-size": 10.5 });
         }
       }
       txt(svg, cx, m.t + ih + 15, spec.monthNames[i][0], { "text-anchor": "middle", fill: spec.selected[i] ? C.ink2 : C.muted, "font-size": 10.5 });

@@ -33,7 +33,7 @@ document.getElementById("go").onclick = function () {
   }
   function tile(id) {
     if (mf.tiles.indexOf(id) < 0) return Promise.resolve(null);
-    if (!cache[id]) cache[id] = fetch("data/" + id + ".json").then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    if (!cache[id]) cache[id] = fetch("https://seastate-data.thrustm.com/data/" + id + ".json").then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
     return cache[id];
   }
   function valid(t, c) {
@@ -41,7 +41,7 @@ document.getElementById("go").onclick = function () {
     for (m = 0; m < 12; m++) if (t.n[c][m] > 0 && t.exc[c][m * T] >= 0) return true;
     return false;
   }
-  fetch("data/manifest.json").then(function (r) { return r.json(); }).then(function (m) {
+  fetch("https://seastate-data.thrustm.com/data/manifest.json").then(function (r) { return r.json(); }).then(function (m) {
     mf = m;
     log("Data: " + (mf.source_label || mf.source) + ", " + mf.period + ", " + mf.grid.res + " degree grid");
     var i = 0;

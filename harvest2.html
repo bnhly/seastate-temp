@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Bass Strait page data</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:640px;margin:32px auto;padding:0 16px;color:#1b1b1b;background:#fafaf8}
+button{font-size:16px;padding:10px 18px;border-radius:6px;border:0;background:#14304a;color:#fff}
+#log{white-space:pre-wrap;font-size:13px;color:#555;margin-top:14px}</style></head>
+<body>
+<h1>Bass Strait page data</h1>
+<p>Collects the wave statistics for the two Bass Strait pages (west and east) from this server's data, as one small file.
+Press the button, wait for it to finish, then send the downloaded file to Claude.</p>
+<p><button id="go">Collect and download</button></p>
+<div id="log"></div>
+<script>
+/* One-off helper for the WAVERYS location pages (23 Oct 26). Reads this
+   server's own data/ (same origin, so the data gate lets it through) and
+   keeps, for each location, the cells within 30 km of its nearest cell with
+   data: enough for tools/build_pages.py to pick the same cell. Delete after use. */
+var LOCS = [["west-bass-strait", -39.01, 142.71], ["east-bass-strait", -38.28, 148.57]];
+var KEEP = ["lat", "lon", "n", "mean", "exc", "wm", "w9", "pw"];
+function log(s) { document.getElementById("log").textContent += s + "\n"; }
+function km(a, b, c, d) {
+  var R = 6371, p = Math.PI / 180, dl = (c - a) * p, dn = (d - b) * p;
+  var h = Math.sin(dl / 2) * Math.sin(dl / 2) + Math.cos(a * p) * Math.cos(c * p) * Math.sin(dn / 2) * Math.sin(dn / 2);
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function wrap(lon) { lon = ((lon + 180) % 360 + 360) % 360 - 180; return lon; }
+document.getElementById("go").onclick = function () {
+  this.disabled = true;
+  var cache = {}, mf, out = {};
+  function tid(la, lo) {
+    var t = mf.tile_deg;
+    return "t_" + (Math.floor((la + 90) / t) * t - 90) + "_" + (Math.floor((wrap(lo) + 180) / t) * t - 180);
+  }
+  function tile(id) {
+    if (mf.tiles.indexOf(id) < 0) return Promise.resolve(null);
+    if (!cache[id]) cache[id] = fetch("data/" + id + ".json").then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    return cache[id];
+  }
+  function valid(t, c) {
+    var T = mf.thresholds.length, m;
+    for (m = 0; m < 12; m++) if (t.n[c][m] > 0 && t.exc[c][m * T] >= 0) return true;
+    return false;
+  }
+  fetch("data/manifest.json").then(function (r) { return r.json(); }).then(function (m) {
+    mf = m;
+    log("Data: " + (mf.source_label || mf.source) + ", " + mf.period + ", " + mf.grid.res + " degree grid");
+    var i = 0;
+    function next() {
+      if (i >= LOCS.length) return finish();
+      var L = LOCS[i++], lat = L[1], lon = L[2], ids = [], k, j;
+      for (k = -1; k <= 1; k++) for (j = -1; j <= 1; j++) {
+        var id = tid(Math.max(-89.9, Math.min(89.9, lat + k * 3)), lon + j * 3 / Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+        if (ids.indexOf(id) < 0) ids.push(id);
+      }
+      return Promise.all(ids.map(tile)).then(function (ts) {
+        var best = null, cands = [], a, c, d;
+        for (a = 0; a < ts.length; a++) {
+          if (!ts[a]) continue;
+          for (c = 0; c < ts[a].lat.length; c++) {
+            d = km(lat, lon, ts[a].lat[c], ts[a].lon[c]);
+            cands.push([ids[a], c, d]);
+            if (valid(ts[a], c) && (!best || d < best)) best = d;
+          }
+        }
+        var n = 0;
+        cands.forEach(function (x) {
+          if (best === null || x[2] > best + 30) return;
+          var t = null, f;
+          for (a = 0; a < ids.length; a++) if (ids[a] === x[0]) t = ts[a];
+          var o = out[x[0]] || (out[x[0]] = { format: 1, lat: [], lon: [], n: [], mean: [], exc: [], wm: [], w9: [], pw: [], seen: {} });
+          if (o.seen[x[1]]) return;
+          o.seen[x[1]] = 1;
+          KEEP.forEach(function (f2) { if (t[f2]) o[f2].push(t[f2][x[1]]); });
+          n++;
+        });
+        log(i + "/" + LOCS.length + " " + L[0] + ": " + (best === null ? "no data in range" : n + " cells, nearest " + Math.round(best) + " km"));
+        return next();
+      });
+    }
+    return next();
+  }).catch(function (e) { log("FAILED: " + e); });
+  function finish() {
+    Object.keys(out).forEach(function (k) { delete out[k].seen; KEEP.forEach(function (f) { if (!out[k][f].length) delete out[k][f]; }); });
+    var blob = new Blob([JSON.stringify({ manifest: mf, tiles: out })], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "seastate_bass_strait_data.json";
+    document.body.appendChild(a); a.click();
+    log("Done. File downloaded: seastate_bass_strait_data.json (" + Math.round(blob.size / 1024) + " KB). Send it to Claude.");
+  }
+};
+</script>
+</body></html>

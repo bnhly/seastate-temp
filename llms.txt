@@ -18,7 +18,7 @@
 
 ## Citable pages
 
-- [Locations index](https://seastate.thrustm.com/locations/index.html): 85 named offshore working areas, each with a monthly table, the headline numbers in words, the data basis and a citation line
+- [Locations index](https://seastate.thrustm.com/locations/index.html): 87 named offshore working areas, each with a monthly table, the headline numbers in words, the data basis and a citation line
 - [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
 - [Explorer](https://seastate.thrustm.com/): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result
 

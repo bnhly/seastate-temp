@@ -16,21 +16,16 @@
 - Attribution: Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave reanalysis [1980-2023], 3 hourly significant wave height, peak period and direction. Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid (wind, direction rose, diurnal cycle and ENSO split 1980-2024). Neither the European Commission nor ECMWF nor Mercator Ocean is responsible for any use of this information.
 - These are long term climatological statistics and not a forecast. They are likely to underestimate extremes, especially close to coastlines, in sheltered or shallow water and in tropical cyclone conditions. The data is free for everyone to use, but it is not warranted by Thrust Maritime: use it at your own risk.
 
-## Citable pages
+## Pages
 
-- [Locations index](https://seastate.thrustm.com/locations/index.html): 87 named offshore working areas, each with a monthly table, the headline numbers in words, the data basis and a citation line
+- [Locations index](https://seastate.thrustm.com/locations/index.html): 87 named offshore working areas, each with a monthly table, the headline numbers in words and the data basis
 - [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
 - [Explorer](https://seastate.thrustm.com/): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result
 
-## How to cite
-
-- Thrust Maritime, Sea State Explorer, <location>, WAVERYS wave reanalysis (Copernicus Marine) + ERA5 wind 1980-2023, 3 hourly, accessed <date>, <page URL>
-- Each location page carries its own ready-made citation line.
-
 ## Not for scraping
 
-- The tile files under /data/ are bulk inputs for the interactive map, excluded from crawling in robots.txt, and not a citable surface. Automated bulk extraction is not permitted; the underlying open datasets are available from the original providers credited above.
-- The location pages and the How it works page are the reference surface: quote from them and link to them.
+- The tile files under /data/ are bulk inputs for the interactive map, excluded from crawling in robots.txt, and not for reuse. Automated bulk extraction is not permitted; the underlying open datasets are available from the original providers credited above.
+- The location pages and the How it works page are the reference surface: link to them.
 
 ## Contact
 

@@ -122,7 +122,7 @@
 
   <h1>How it works</h1>
 
-  <p class="lede">We built Sea State Explorer because getting a quick, honest answer to "what's the sea like out there in July?" was harder than it should be. The data exists, but it's buried in research archives. This page explains where our numbers come from and how far you can trust them.</p>
+  <p class="lede">We kept being asked what the sea is like at a site in a given month, and the answer meant digging through research archives every time. So we built this. Below is where the numbers come from and where they stop being reliable.</p>
 
   <nav class="toc" aria-label="Contents">
     <span class="title">On this page</span>
@@ -137,9 +137,9 @@
 
   <h2 id="sources">Where the numbers come from</h2>
 
-  <p>None of this is measured at your point, and none of it is a forecast. It comes from reanalysis, which is what you get when forecasters re-run their weather and wave models over past decades and keep them honest with satellite and buoy observations. The result is a record every 3 hours, everywhere, going back to 1980. Most metocean studies start from the same kind of data.</p>
+  <p>None of this is measured at your point, and none of it is a forecast. It comes from reanalysis, where weather and wave models are re-run over past decades and corrected against satellite and buoy observations. That gives a record every 3 hours for the whole ocean, back to 1980. Most metocean studies start from the same data.</p>
 
-  <p>Here's what we use:</p>
+  <p>The sources:</p>
 
   <div class="wrap">
   <table>
@@ -155,48 +155,48 @@
   </table>
   </div>
 
-  <p>When you click, we use the closest grid cell and tell you how far away it is. We don't blend neighbouring cells together. If you want the exact record behind a result, open Data sources at the bottom of the explorer.</p>
+  <p>When you click, we use the closest grid cell and tell you how far away it is. We don't blend neighbouring cells together. The exact record behind each result is listed under Data sources at the bottom of the explorer.</p>
 
   <h2 id="reading">Reading the results</h2>
 
   <h3>Percent of time above a wave height</h3>
-  <p>The big number at the top is how often significant wave height (Hs) was at or above your limit, counting every 3 hourly record in the months you picked. Hs is roughly the average of the highest third of the waves, so expect the odd wave close to double that.</p>
+  <p>The big number at the top is how often significant wave height (Hs) was at or above your limit, counting every 3 hourly record in the months you picked. Hs is roughly the average of the highest third of the waves. Individual waves can be close to double it.</p>
 
   <h3>Extremes</h3>
-  <p>When we say "1 sea state in 100 is above 6 m", we mean 1 in every 100 records was higher than 6 m. That's not a 100 year wave, and it shouldn't be treated like one. If you need design extremes, you need a proper extreme value study.</p>
+  <p>When we say "1 sea state in 100 is above 6 m", we mean 1 in every 100 records was higher than 6 m. That is not a 100 year wave. Design extremes need an extreme value study.</p>
 
   <h3>Weather windows</h3>
-  <p>This counts how many separate working periods of your chosen length fit into a typical month with Hs below your limit. A three day calm counts as three 24 hour periods. We estimate it from how long calm spells usually last rather than counting them one by one, and when we tested it against exact counts it was usually within one period a month. Good enough for planning, not for a contract.</p>
+  <p>This counts how many separate working periods of your chosen length fit into a typical month with Hs below your limit. A three day calm counts as three 24 hour periods. We estimate it from how long calm spells usually last rather than counting them one by one, and checked against exact counts it was usually within one period a month. Fine for planning, not for contract weather criteria.</p>
 
   <h3>Across the day</h3>
-  <p>Average wind and wave height for each 3 hour slot of the day. The times are local solar time, so noon is when the sun is highest, which may not match your clock. Near the coast and in the tropics you'll often see a calm morning and a breezy afternoon. Out in open ocean there's usually no pattern at all, and the explorer will tell you that.</p>
+  <p>Average wind and wave height for each 3 hour slot of the day. The times are local solar time, so noon is when the sun is highest, which may not match your clock. Near the coast and in the tropics there is often a calm morning and a breezy afternoon. In open ocean there is usually no daily pattern, and the explorer says so.</p>
 
   <h3>Current and tide</h3>
-  <p>You get the typical peak tidal stream at springs and neaps, how long slack water lasts, and the background current that runs regardless of the tide. The tide model only gives an average over the full water depth, so we scale it to the surface and seabed using the usual 1/7 power profile. The combined table adds tide, wind and background current together following DNVGL-RP-C205 section 4.1. Use it to see whether current matters at a site. It isn't a design current.</p>
+  <p>You get the typical peak tidal stream at springs and neaps, how long slack water lasts, and the background current that runs regardless of the tide. The tide model only gives an average over the full water depth, so we scale it to the surface and seabed using the usual 1/7 power profile. The combined table adds tide, wind and background current together following DNVGL-RP-C205 section 4.1. It shows whether current matters at a site. It is not a design current.</p>
 
   <h3>Tropical cyclones</h3>
-  <p>We count how often tropical storms and cyclones have come within 120, 250, 500 and 1,000 nautical miles of your point in the months you picked, and show the strongest on record. Plenty of operations start securing and demobilising once a cyclone is inside 1,000 nm, so expect that downtime on top of the wave statistics.</p>
+  <p>We count how often tropical storms and cyclones have come within 120, 250, 500 and 1,000 nautical miles of your point in the months you picked, and show the strongest on record. Many operations start securing and demobilising once a cyclone is inside 1,000 nm, so that downtime comes on top of the wave statistics.</p>
 
   <h3>Assets</h3>
-  <p>Platforms, wells, fields and pipelines come from public registers and are there to help you get your bearings. The positions are approximate. Don't navigate by them.</p>
+  <p>Platforms, wells, fields and pipelines come from public registers and are shown for reference. Positions are approximate and not for navigation.</p>
 
   <h2 id="limits">Where it falls short</h2>
-  <p>The models are coarse, so treat anything close to land, in a bay, or in shallow or sheltered water with suspicion. They also smooth out tropical cyclones and tend to understate the worst seas. With a record every 3 hours, short sharp events can slip between readings.</p>
-  <p>Wave height is only part of the story. Whether a job can go ahead also depends on wave period, direction, current, and how your vessel actually moves. And none of this is for engineering design, navigation, or deciding go or no-go on the day.</p>
+  <p>The models are coarse. Close to land, in bays, and in shallow or sheltered water the numbers are less reliable. The models also smooth out tropical cyclones and tend to understate the worst seas, and short events can fall between the 3 hourly records.</p>
+  <p>Whether a job can go ahead also depends on wave period, direction, current and how the vessel responds, not just wave height. None of this is for engineering design, navigation or go / no-go decisions on the day.</p>
 
   <h2 id="cite">Sharing</h2>
-  <p>Every result has its own link. Hit Copy link to this result and whoever opens it lands on the same point with the same months and limits. The PDF summary has the link on it too.</p>
+  <p>Every result has its own link. Copy link to this result gives a link that opens the same point with the same months and limits. The PDF summary carries the link too.</p>
   <p>Please don't scrape the data in bulk. The open datasets underneath are free from the providers listed below.</p>
 
   <section class="cta">
-    <h2>Need more than a first look?</h2>
-    <p>This tool gets you started. When a job needs firmer numbers, we can do a project specific metocean study, extreme value analysis and vessel response work.</p>
+    <h2>Need firmer numbers?</h2>
+    <p>For a specific project we can do a metocean study, extreme value analysis and vessel response work.</p>
     <p><a href="https://www.thrustm.com/?utm_source=seastate&amp;utm_medium=referral&amp;utm_campaign=sea_state_explorer&amp;utm_content=howitworks_cta" target="_blank" rel="noopener">Get in touch at thrustm.com</a></p>
   </section>
 
   <h2 id="licences">Data credits</h2>
 
-  <p>These are the providers we rely on, with the credit each one asks for.</p>
+  <p>The providers, with the credit each one asks for.</p>
 
   <div class="attr">
     <p><span class="who">ERA5, Copernicus Climate Change Service (ECMWF), <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</span> Contains modified Copernicus Climate Change Service information. Hersbach, H. et al. (2023), ERA5 hourly data on single levels from 1940 to present, doi:10.24381/cds.adbb2d47. Neither the European Commission nor ECMWF is responsible for any use of this information.</p>

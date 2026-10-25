@@ -14,7 +14,7 @@
 
 - WAVERYS wave reanalysis (Copernicus Marine) + ERA5 wind, 1980-2023, 3 hourly, 0.2 degree grid. Values are the nearest grid cell to the chosen point, never interpolated between cells; every result states the data point, the grid and its distance from the chosen point, and the PDF adds the sample count.
 - Attribution: Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave reanalysis [1980-2023], 3 hourly significant wave height, peak period and direction. Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid (wind, direction rose, diurnal cycle and ENSO split 1980-2024). Neither the European Commission nor ECMWF nor Mercator Ocean is responsible for any use of this information.
-- These are long term statistics, not forecasts. They are unreliable near coasts and in sheltered or shallow water and can understate extremes. Early planning only, not for navigation, engineering design or go / no-go decisions.
+- These are long term climatological statistics and not a forecast. They are likely to underestimate extremes, especially close to coastlines, in sheltered or shallow water and in tropical cyclone conditions. The data is free for everyone to use, but it is not warranted by Thrust Maritime: use it at your own risk.
 
 ## Citable pages
 

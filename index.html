@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Free historical sea state data for any offshore location: wave exceedance by month, wind, weather windows and extremes, with a one page PDF.">
 <meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=797e5836db">
+<link rel="stylesheet" href="style.css?v=881e413e11">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -104,7 +104,7 @@
         <label><input type="checkbox" id="tm-shade" checked> Average wave height shading</label>
         <label><input type="checkbox" id="tm-contours"> Depth contours</label>
         <label id="tm-assets-toggle" hidden><input type="checkbox" id="tm-assets" checked> Oil and gas assets</label>
-        <label id="tm-cyctracks-label" hidden><input type="checkbox" id="tm-cyctracks"> Cyclone tracks</label>
+        <label id="tm-cyctracks-label" hidden><input type="checkbox" id="tm-cyctracks"> Hurricane, typhoon and cyclone tracks</label>
       </div>
       <div class="tm-track-ctl" id="tm-ct-ctl" hidden>
         <span class="tm-f-label">Show storms:</span>
@@ -144,7 +144,7 @@
       <p class="tm-intro" id="tm-intro">Free historical sea state data for any offshore location.
       Click a point at sea and pick your months to see how often significant wave height goes
       over your limit, plus wind, wave period and direction, weather windows, current and tide,
-      and cyclone history. The map also shows water depth and nearby oil and gas platforms,
+      and hurricane, typhoon and cyclone history. The map also shows water depth and nearby oil and gas platforms,
       wells and pipelines. Based on more than 40 years of Copernicus records. Useful for early
       planning of marine and subsea work, with a one page PDF to share.</p>
       <section class="tm-controls" aria-label="Filters">
@@ -250,9 +250,9 @@
 
         <div class="tm-charts tm-charts-c tm-solo" id="tm-row4" hidden>
           <figure class="tm-fig" id="tm-cyc-fig">
-            <figcaption>Tropical cyclone exposure</figcaption>
+            <figcaption id="tm-cyc-cap">Tropical cyclone exposure</figcaption>
             <div class="tm-win-controls">Storm activity inside
-              <select id="tm-cyc-r" aria-label="Cyclone exposure distance"></select>
+              <select id="tm-cyc-r" aria-label="Storm exposure distance"></select>
               of this point</div>
             <div id="tm-cyc-sum" class="tm-win-sum"></div>
             <div id="tm-cyc" class="tm-chart"></div>
@@ -342,15 +342,15 @@
 
 <div class="tm-tip" id="tm-tip" hidden></div>
 
-<script>window.TM_BUILD="797e5836db";</script>
+<script>window.TM_BUILD="881e413e11";</script>
 <script>window.TM_CONFIG_OVERRIDES=Object.assign(window.TM_CONFIG_OVERRIDES||{},{dataBase:"https://seastate-data.thrustm.com/data/"});</script>
-<script src="coastline.js?v=797e5836db"></script>
-<script src="borders.js?v=797e5836db"></script>
-<script src="places.js?v=797e5836db"></script>
-<script src="data.js?v=797e5836db"></script>
-<script src="map.js?v=797e5836db"></script>
-<script src="chart.js?v=797e5836db"></script>
-<script src="report.js?v=797e5836db"></script>
-<script src="app.js?v=797e5836db"></script>
+<script src="coastline.js?v=881e413e11"></script>
+<script src="borders.js?v=881e413e11"></script>
+<script src="places.js?v=881e413e11"></script>
+<script src="data.js?v=881e413e11"></script>
+<script src="map.js?v=881e413e11"></script>
+<script src="chart.js?v=881e413e11"></script>
+<script src="report.js?v=881e413e11"></script>
+<script src="app.js?v=881e413e11"></script>
 </body>
 </html>

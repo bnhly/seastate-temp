@@ -152,7 +152,7 @@
     <tr><td>Wave height against period table</td><td>ERA5, grouped into 1 degree blocks.</td></tr>
     <tr><td>Tide and current</td><td>Copernicus Marine Service. A global tide model for the tidal stream and the GLORYS12 ocean reanalysis for everything else.</td></tr>
     <tr><td>Water depth</td><td>ETOPO 2022 from NOAA, averaged over roughly 11 km.</td></tr>
-    <tr><td>Tropical cyclones</td><td>IBTrACS storm tracks from NOAA, 1980 on.</td></tr>
+    <tr><td>Hurricanes, typhoons and cyclones</td><td>IBTrACS storm tracks from NOAA, 1980 on.</td></tr>
     <tr><td>Coastlines and place names</td><td>Natural Earth and GSHHG.</td></tr>
     <tr><td>Oil and gas assets</td><td>OpenStreetMap, Global Energy Monitor, Geoscience Australia, the Norwegian Offshore Directorate and US BOEM / BSEE.</td></tr>
   </table>
@@ -177,8 +177,8 @@
   <h3>Current and tide</h3>
   <p>You get the typical peak tidal stream at springs and neaps, how long slack water lasts, and the background current that runs regardless of the tide. The tide model only gives an average over the full water depth, so we scale it to the surface and seabed using the usual 1/7 power profile. The combined table adds tide, wind and background current together following DNVGL-RP-C205 section 4.1. It shows whether current matters at a site. It is not a design current.</p>
 
-  <h3>Tropical cyclones</h3>
-  <p>We count how often tropical storms and cyclones have come within 120, 250, 500 and 1,000 nautical miles of your point in the months you picked, and show the strongest on record. Many operations start securing and demobilising once a cyclone is inside 1,000 nm, so that downtime comes on top of the wave statistics.</p>
+  <h3>Hurricanes, typhoons and cyclones</h3>
+  <p>These are all the same kind of storm, a tropical cyclone, named by ocean: hurricane in the Atlantic and eastern Pacific, typhoon in the western Pacific, cyclone in the Indian Ocean and around Australia. The explorer uses the word for wherever you click. We count how often they have come within 120, 250, 500 and 1,000 nautical miles of your point in the months you picked, and show the strongest on record. Many operations start securing and demobilising once a cyclone is inside 1,000 nm, so that downtime comes on top of the wave statistics.</p>
 
   <h3>Assets</h3>
   <p>Platforms, wells, fields and pipelines come from public registers and are shown for reference. Positions are approximate and not for navigation.</p>

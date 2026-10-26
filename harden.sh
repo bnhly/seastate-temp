@@ -348,20 +348,25 @@ echo "  /data/manifest.json without headers  -> $(code http://127.0.0.1/data/man
 echo "  /status.txt without headers          -> $(code http://127.0.0.1/status.txt)   (want 200)"
 echo "  /robots.txt                          -> $(code http://127.0.0.1/robots.txt)   (want 200)"
 if [ -n "$tile" ]; then
-  echo "  /data/$tile without headers  -> $(code "http://127.0.0.1/data/$tile")   (want 403)"
+  # the verdict uses these two readings, taken BEFORE the burst below: a
+  # reading straight after it meets the rate limit (429) and misjudges the
+  # gate (Ben's run, 26 Oct 26)
+  gate_no=$(code "http://127.0.0.1/data/$tile")
+  gate_ok=$(code -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
+  echo "  /data/$tile without headers  -> $gate_no   (want 403)"
   echo "  same with Origin evil.com            -> $(code -H 'Origin: https://evil.example' "http://127.0.0.1/data/$tile")   (want 403)"
-  echo "  same with Origin seastate.thrustm.com -> $(code -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")   (want 200)"
+  echo "  same with Origin seastate.thrustm.com -> $gate_ok   (want 200)"
   echo "  same with Referer https://www.thrustm.com/x -> $(code -H 'Referer: https://www.thrustm.com/x' "http://127.0.0.1/data/$tile")   (want 200)"
   acao=$(curl -s -m 5 -D - -o /dev/null -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile" | grep -i '^access-control-allow-origin' | tr -d '\r')
   echo "  CORS header on the allowed request   -> ${acao:-MISSING}"
+  # marked as team (t=1), so the weekly email leaves it out
+  echo "  /hit usage signal                    -> $(code -X POST -H 'Referer: https://seastate.thrustm.com/' "http://127.0.0.1/hit?e=pv&p=selfcheck&s=selfcheck&t=1")   (want 204)"
   # 160 requests fired 20 at a time: sequential curls run at roughly the
   # allowed rate and never trip the limit, which proves nothing
   codes=$(seq 1 160 | xargs -P 20 -I{} curl -s -o /dev/null -m 5 -w '%{http_code}\n' -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
   n200=$(echo "$codes" | grep -c '^200$' || true)
   n429=$(echo "$codes" | grep -c '^429$' || true)
   echo "  rate limit smoke: 160 requests, 20 in parallel -> $n200 x 200, $n429 x 429 (some 429s expected once the burst of 80 is used up)"
-  gate_no=$(code "http://127.0.0.1/data/$tile")
-  gate_ok=$(code -H 'Origin: https://seastate.thrustm.com' "http://127.0.0.1/data/$tile")
   if [ "$gate_no" = 403 ] && [ "$gate_ok" = 200 ] && [ "$n429" -gt 0 ]; then
     echo "  VERDICT: GATE ACTIVE, RATE LIMIT ACTIVE"
   elif [ "$gate_no" = 403 ] && [ "$gate_ok" = 200 ]; then

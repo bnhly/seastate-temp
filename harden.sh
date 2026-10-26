@@ -198,6 +198,16 @@ cat <<'EOF'
     try_files $uri =404;
   }
 
+  # usage signal from the site's pages (hit.js): logged, answered empty.
+  # stats.sh counts these lines; only the site's own pages count there.
+  location = /hit {
+    limit_req zone=tm_data burst=80 nodelay;
+    limit_req_status 429;
+    add_header Access-Control-Allow-Origin $tm_origin always;
+    add_header Cache-Control "no-store" always;
+    return 204;
+  }
+
   # page files for the team preview (preview.sh), the coastline, robots.txt
   location / { index index.html; try_files $uri $uri/ =404; }
 EOF

@@ -56,6 +56,7 @@ cat > "$BASE/stats_report.py" <<'PY'
 import datetime
 import glob
 import gzip
+import hashlib
 import json
 import math
 import os
@@ -63,6 +64,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 
 BASE = os.environ.get("TM_STATS_BASE", "/root/seastate")
 WEB = BASE + "/webdata"
@@ -82,6 +84,9 @@ KEEP_DAYS = 400
 LINE = re.compile(r'^(\S+) \S+ \S+ \[([^\]]+)\] "(?:\S+ (\S+)[^"]*|[^"]*)" (\d{3}) \S+ "([^"]*)" "([^"]*)"')
 TILE = re.compile(r"^/data/t_(-?\d+)_(-?\d+)\.json")
 LOCAL = ("127.0.0.1", "::1")
+SITE = "seastate.thrustm.com"
+EVENTS = ("pv", "place", "pdf", "share", "cta", "li", "fb")
+SALT_FILE = BASE + "/stats_salt"
 
 # named places for the region labels (from the location pages list)
 LOCS = [
@@ -211,13 +216,76 @@ def region(tile, t):
     return box
 
 
+def salt():
+    """A random key kept on this box, so visitor keys are never plain
+    addresses and cannot be matched to anything outside it."""
+    if not os.path.exists(SALT_FILE):
+        with open(SALT_FILE, "w") as f:
+            f.write(os.urandom(16).hex())
+        os.chmod(SALT_FILE, 0o600)
+    with open(SALT_FILE) as f:
+        return f.read().strip()
+
+
+def ref_host(ref):
+    if not ref or ref == "-":
+        return ""
+    return re.sub(r"^https?://([^/:]+).*$", r"\1", ref).lower()
+
+
+def internal_ref(host):
+    """Requests from the preview copy on this box (its bare IP address) or
+    from this host's own pages are the team testing, not visitors."""
+    return host == "seastate-data.thrustm.com" or bool(re.match(r"^[\d.]+$|^\[", host))
+
+
+def place_label(cell):
+    """A 1 degree cell as words: the named place within 150 km, else the
+    region within 600 km, else the bare position."""
+    try:
+        la, lo = [float(x) for x in cell.split(",")]
+    except ValueError:
+        return cell
+    pos = "%g%s %g%s" % (abs(la), "S" if la < 0 else "N", abs(lo), "W" if lo < 0 else "E")
+    best = None
+    for name, lat, lon, reg in LOCS:
+        d = km(la, lo, lat, lon)
+        if best is None or d < best[0]:
+            best = (d, name, reg)
+    if best and best[0] <= 150:
+        return "near %s, %s (%s)" % (best[1], best[2], pos)
+    if best and best[0] <= 600:
+        return "%s (%s)" % (best[2], pos)
+    return pos
+
+
+def page_label(p):
+    if p == "home":
+        return "Explorer (main page)"
+    if p == "how":
+        return "How it works"
+    if p == "locations":
+        return "Locations index"
+    if p.startswith("loc:"):
+        slug = p[4:]
+        return "Location: " + slug.replace("-", " ").capitalize()
+    return p
+
+
 def open_log(path):
     if path.endswith(".gz"):
         return gzip.open(path, "rt", errors="replace")
     return open(path, errors="replace")
 
 
+def new_day():
+    return {"req": 0, "blocked": 0, "limited": 0, "internal": 0, "files": {},
+            "tiles": {}, "refs": {}, "ua": {},
+            "hit": {"team": 0, "team_v": set(), "v": set(), "ev": {}, "pages": {}, "src": {}, "places": {}}}
+
+
 def parse(today):
+    key_salt = salt()
     days = {}
     for path in sorted(glob.glob(LOGGLOB)):
         try:
@@ -230,7 +298,10 @@ def parse(today):
                 if not m:
                     continue
                 ip, ts, url, status, ref, ua = m.groups()
-                if ip in LOCAL or not url or not url.startswith("/data/"):
+                if ip in LOCAL or not url:
+                    continue
+                is_hit = url.startswith("/hit?")
+                if not is_hit and not url.startswith("/data/"):
                     continue
                 try:
                     day = datetime.datetime.strptime(ts, "%d/%b/%Y:%H:%M:%S %z").astimezone(
@@ -241,8 +312,36 @@ def parse(today):
                     continue
                 d = days.get(day)
                 if d is None:
-                    d = days[day] = {"req": 0, "blocked": 0, "limited": 0, "files": {},
-                                     "tiles": {}, "refs": {}, "ua": {}}
+                    d = days[day] = new_day()
+                if is_hit:
+                    # the site's own pages only (hit.js sends from nowhere else)
+                    if status != "204" or ref_host(ref) != SITE:
+                        continue
+                    q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+                    e = q.get("e", "")
+                    if e not in EVENTS:
+                        continue
+                    v = hashlib.sha1((key_salt + ip + "|" + ua).encode("utf-8", "replace")).hexdigest()[:12]
+                    h = d["hit"]
+                    if q.get("t") == "1":
+                        h["team"] += 1
+                        h["team_v"].add(v)
+                        continue
+                    h["v"].add(v)
+                    ev = h["ev"].setdefault(e, {"n": 0, "v": set()})
+                    ev["n"] += 1
+                    ev["v"].add(v)
+                    if v not in h["src"]:
+                        h["src"][v] = (q.get("s") or "direct")[:40]
+                    if e == "pv":
+                        pg = (q.get("p") or "home")[:60]
+                        h["pages"].setdefault(pg, set()).add(v)
+                    elif e == "place" and q.get("g"):
+                        h["places"].setdefault(q["g"][:12], set()).add(v)
+                    continue
+                if internal_ref(ref_host(ref)):
+                    d["internal"] += 1
+                    continue
                 d["req"] += 1
                 path_only = url.split("?")[0]
                 if status == "403":
@@ -278,6 +377,18 @@ def day_record(day, d):
         "tiles": tiles,
         "referers": dict(sorted(d["refs"].items(), key=lambda kv: -kv[1])[:10]),
         "heavy": [{"address": ip, "files": n, "browser": d["ua"].get(ip, "")[:160]} for n, ip in heavy[:10]],
+        "internal_requests": d["internal"],
+        # usage from hit.js; visitor keys are salted hashes, kept on this box
+        # so the week can count each visitor once
+        "hits": {
+            "v": sorted(d["hit"]["v"]),
+            "team_hits": d["hit"]["team"],
+            "team_visitors": len(d["hit"]["team_v"]),
+            "ev": dict((e, {"n": x["n"], "v": sorted(x["v"])}) for e, x in d["hit"]["ev"].items()),
+            "pages": dict((k, sorted(x)) for k, x in d["hit"]["pages"].items()),
+            "src": d["hit"]["src"],
+            "places": dict((k, sorted(x)) for k, x in d["hit"]["places"].items()),
+        },
     }
 
 
@@ -349,6 +460,55 @@ def main():
         for k, n in r["referers"].items():
             refs[k] = refs.get(k, 0) + n
 
+    def visits(days):
+        """The hit.js numbers over a run of days, each visitor once."""
+        allv, ev, pages, places, src = set(), {}, {}, {}, {}
+        team_h, team_v = 0, 0
+        for r in days:
+            hh = r.get("hits") or {}
+            allv.update(hh.get("v") or [])
+            team_h += hh.get("team_hits") or 0
+            team_v += hh.get("team_visitors") or 0
+            for e, x in (hh.get("ev") or {}).items():
+                a = ev.setdefault(e, [0, set()])
+                a[0] += x.get("n") or 0
+                a[1].update(x.get("v") or [])
+            for k, vs in (hh.get("pages") or {}).items():
+                pages.setdefault(k, set()).update(vs)
+            for k, vs in (hh.get("places") or {}).items():
+                places.setdefault(k, set()).update(vs)
+            for vk, sname in (hh.get("src") or {}).items():
+                src.setdefault(vk, sname)     # the first source seen in the week
+        by_src = {}
+        for sname in src.values():
+            by_src[sname] = by_src.get(sname, 0) + 1
+        by_place = {}
+        for cell, vs in places.items():
+            lab = place_label(cell)
+            by_place.setdefault(lab, set()).update(vs)
+        funnel = {"visitors": len(allv)}
+        for e in EVENTS:
+            if e == "pv":
+                continue
+            a = ev.get(e)
+            funnel[e] = {"n": a[0] if a else 0, "visitors": len(a[1]) if a else 0}
+        return {
+            "funnel": funnel,
+            "page_views": ev.get("pv", [0])[0],
+            "sources": sorted(([k, n] for k, n in by_src.items()), key=lambda kv: -kv[1])[:10],
+            "places": sorted(([k, len(vs)] for k, vs in by_place.items()), key=lambda kv: -kv[1])[:12],
+            "pages": sorted(([page_label(k), len(vs)] for k, vs in pages.items()), key=lambda kv: -kv[1])[:12],
+            "team_hits": team_h,
+            "team_visitor_days": team_v,
+        }
+
+    vw, vp = visits(week), visits(prior)
+    vdays = []
+    for r in week:
+        hh = r.get("hits") or {}
+        vdays.append({"day": r["day"], "visitors": len(hh.get("v") or []),
+                      "places": len(set(x for vs in (hh.get("places") or {}).values() for x in vs))})
+
     def day_alerts(r, before):
         out = []
         for h in r["heavy"]:
@@ -394,6 +554,8 @@ def main():
             "referers": sorted(([k, n] for k, n in refs.items()), key=lambda kv: -kv[1])[:6],
             "alerts": week_alerts,
         },
+        "visits": {"week": vw, "prior": vp, "days": vdays,
+                   "internal_requests": sum(r.get("internal_requests") or 0 for r in week)},
         "health": h,
         "alerts": alerts,
         "thresholds": {"scrape_files": SCRAPE_FILES, "block_min": BLOCK_MIN, "block_factor": BLOCK_FACTOR,

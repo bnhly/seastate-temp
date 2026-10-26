@@ -47,6 +47,9 @@ tr.tm-year td { background:#eef4fc; font-weight:600; }
 .tm-cta h2 { margin:0 0 6px; font-size:17px; color:#fff; }
 .tm-cta p { margin:4px 0; max-width:720px; }
 .tm-cta a { color:#9ec5f4; font-weight:600; }
+.tm-cta a.tm-li, .cta a.tm-li { display:inline-flex; align-items:center; gap:7px; margin-top:6px; padding:5px 13px; border:1px solid rgba(255,255,255,.5); border-radius:999px; color:#fff; text-decoration:none; font-weight:600; }
+.tm-cta a.tm-li:hover, .cta a.tm-li:hover { background:rgba(255,255,255,.12); }
+.tm-li svg { width:15px; height:15px; fill:currentColor; flex:none; }
 .tm-cite { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px;
   font-size:13.5px; word-break: break-word; }
 .tm-footer { margin-top:18px; color:var(--muted); font-size:12px; }
@@ -171,9 +174,10 @@ a { color: var(--accent); }
 <p class="tm-basis">How the numbers are made: <a href="../methodology.html">How it works</a>. Other locations: <a href="index.html">all location pages</a>.</p>
 <section class="tm-cta">
 <h2>Planning a subsea lift?</h2>
-<p>Weather windows decide when a lift can go. Thrust Maritime provides specialist lifting
-solutions for subsea operations.</p>
-<p><a href="https://www.thrustm.com/?utm_source=seastate&amp;utm_medium=referral&amp;utm_campaign=sea_state_explorer&amp;utm_content=location_cta" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+      <p>Weather windows decide when a lift can go. Thrust Maritime provides specialist lifting
+      solutions for subsea operations.</p>
+      <p><a id="tm-cta-link" href="https://www.thrustm.com/?utm_source=seastate&amp;utm_medium=referral&amp;utm_campaign=sea_state_explorer&amp;utm_content=location_cta" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+      <p><a class="tm-li" href="https://www.linkedin.com/company/thrust-maritime-pty-ltd-/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>Follow us on LinkedIn</a></p>
 </section>
 <footer class="tm-footer">
 <p>These are long term climatological statistics and not a forecast. They are likely to underestimate extremes, especially close to coastlines, in sheltered or shallow water and in tropical cyclone conditions. The data is free for everyone to use, but it is not warranted by Thrust Maritime: use it at your own risk.</p>

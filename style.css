@@ -479,6 +479,9 @@ html, body {
 .tm-cta h2 { margin: 0 0 6px; font-size: 17px; color: #fff; }
 .tm-cta p { margin: 4px 0; max-width: 720px; }
 .tm-cta a { color: #9ec5f4; font-weight: 600; }
+.tm-cta a.tm-li, .cta a.tm-li { display:inline-flex; align-items:center; gap:7px; margin-top:6px; padding:5px 13px; border:1px solid rgba(255,255,255,.5); border-radius:999px; color:#fff; text-decoration:none; font-weight:600; }
+.tm-cta a.tm-li:hover, .cta a.tm-li:hover { background:rgba(255,255,255,.12); }
+.tm-li svg { width:15px; height:15px; fill:currentColor; flex:none; }
 
 .tm-footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
 .tm-footer p { margin: 6px 0; max-width: 900px; }

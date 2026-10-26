@@ -82,7 +82,19 @@ if [ "${free_gb:-0}" -lt 15 ]; then
   exit 1
 fi
 
-rm -f "$OUT/summary.txt" "$OUT/progress"
+# re-making every tile holds the whole WAVERYS checkpoint (about 7 GB) plus
+# working space; the first run on the host was killed at 10.5 GB. Below
+# 24 GB of memory and swap, read the checkpoint lazily and leave that layer
+# out (every other layer still runs, and the summary says so)
+mem_gb=${TM_CHECK_MEM:-$(awk '/^MemTotal:|^SwapTotal:/ {s += $2} END {print int(s / 1048576)}' /proc/meminfo)}
+LOWMEM=""
+STEP1="re-emitting every tile and comparing (the long part)"
+if [ "${mem_gb:-0}" -lt 24 ]; then
+  LOWMEM="--low-memory --skip-reemit"
+  STEP1="tiles against the checkpoint (${mem_gb} GB memory: the full re-make is left out)"
+fi
+
+rm -f "$OUT/summary.txt" "$OUT/progress" "$OUT/run.log"
 date -u '+%Y-%m-%d %H:%M UTC' > "$OUT/started"
 
 # ---- the run itself, detached so the console can close
@@ -91,8 +103,9 @@ cat > "$OUT/run.sh" <<EOF
 echo \$\$ > "$OUT/pid"
 cd "$BASE"
 say() { echo "\$(date -u '+%H:%M') \$*" >> "$OUT/progress"; }
-say "1/2 verify_dataset: re-emitting every tile and comparing (the long part)"
-"$PY" "$OUT/verify_dataset.py" --builder $BUILDER --workdir wav_work --era5-workdir wav_work \\
+say "1/2 verify_dataset: $STEP1"
+rm -f "$OUT/verification_report.md"
+"$PY" "$OUT/verify_dataset.py" --builder $BUILDER --workdir wav_work --era5-workdir wav_work $LOWMEM \\
     --data webdata/data --report "$OUT/verification_report.md" --sample 400 >> "$OUT/run.log" 2>&1
 V=\$?
 say "2/2 check_maths: every cell, then 3000 cells against the full record"
@@ -102,8 +115,10 @@ M=\$?
 {
   echo "SEA STATE MATHS CHECK  started $(cat "$OUT/started"), finished \$(date -u '+%Y-%m-%d %H:%M UTC')"
   echo
-  echo "1. Tiles against the checkpoint (verify_dataset): \$( [ \$V = 0 ] && echo ALL PASS || echo FAILED )"
+  if [ \$V = 0 ]; then R1="ALL PASS"; elif [ \$V = 1 ]; then R1="FAILED"; else R1="STOPPED (code \$V, see run.log; 137 means out of memory)"; fi
+  echo "1. Tiles against the checkpoint (verify_dataset): \$R1"
   grep -E '^\- \*\*(PASS|FAIL)' "$OUT/verification_report.md" 2>/dev/null | sed 's/^- \*\*\(PASS\|FAIL\)\*\* /   \1  /' | cut -c1-110
+  grep -q '^SKIPPED' "$OUT/verification_report.md" 2>/dev/null && echo "   SKIP  full re-make of every tile (not enough memory here; all else ran)"
   echo
   echo "2. Browser figures (check_maths): \$( [ \$M = 0 ] && echo NO FAILURES || echo FAILURES FOUND )"
   sed 's/^/   /' "$OUT/maths.out"

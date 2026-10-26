@@ -159,9 +159,38 @@ def coverage(rep, acc, allow_partial=False):
     rep.add("- ocean cells with any data: %d" % int(ocean.sum()))
 
 
+class LazyAcc(dict):
+    """The checkpoint, each array read from the npz only when a check asks
+    for it (26 Oct 26: the data host killed the full load at 10.5 GB). With
+    the re-emit skipped, the checks touch a third of the arrays."""
+
+    def __init__(self, path):
+        dict.__init__(self)
+        import numpy as _np
+        self._z = _np.load(path, allow_pickle=False)
+        self._keys = set(self._z.files)
+        dict.__setitem__(self, "done", [s for s in self._z["done"].tolist()])
+
+    def __contains__(self, k):
+        return dict.__contains__(self, k) or k in self._keys
+
+    def __getitem__(self, k):
+        if not dict.__contains__(self, k):
+            dict.__setitem__(self, k, self._z[k])
+        return dict.__getitem__(self, k)
+
+    def get(self, k, default=None):
+        return self[k] if k in self else default
+
+
 def re_emit_compare(rep, args, acc):
     rep.add("")
     rep.add("## 3. Deterministic re-emit (bit-exact)")
+    if getattr(args, "skip_reemit", False):
+        rep.add("SKIPPED: re-making every tile needs the whole checkpoint in memory, more "
+                "than this machine has. Every other layer still runs. To include it, run on a "
+                "machine with 24 GB or more.")
+        return
     tmp = tempfile.mkdtemp(prefix="verify_emit_")
     try:
         class A(object):
@@ -366,13 +395,21 @@ def main():
                     help="which pipeline produced the checkpoint")
     ap.add_argument("--era5-workdir",
                     help="waverys only: the ERA5 checkpoint whose wind was grafted at emit")
+    ap.add_argument("--skip-reemit", action="store_true",
+                    help="leave out layer 3 (it needs the whole checkpoint in memory)")
+    ap.add_argument("--low-memory", action="store_true",
+                    help="read checkpoint arrays only as the checks need them")
     args = ap.parse_args()
 
     global B
     if args.builder == "waverys":
         import build_dataset_waverys as B
 
-    acc = B.load_accumulator(args.workdir)
+    if args.low_memory:
+        ck = os.path.join(args.workdir, getattr(B, "CHECKPOINT", "seastate_accum.npz"))
+        acc = LazyAcc(ck)
+    else:
+        acc = B.load_accumulator(args.workdir)
     if not acc["done"]:
         raise SystemExit("checkpoint in %s has no accumulated months" % args.workdir)
 

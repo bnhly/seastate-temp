@@ -15,7 +15,8 @@
 #   - writes /root/seastate/stats_report.py and runs it every night at
 #     00:40 UTC (cron). It reads the nginx access logs, keeps one small
 #     file per day under /root/seastate/stats/daily/ (a year of them) and
-#     publishes the last 7 days as /stats/<token>.json on this host.
+#     publishes the last 7 days as /stats/<token>.json on this host, plus
+#     the last 60 days one by one ("daily") for ERPNext's TM Sea State Day.
 #   - makes the token once (/root/seastate/stats_token, 20 lowercase hex
 #     characters) and prints it. The ERPNext script needs it.
 #   - runs the summary straight away over whatever the logs already hold.
@@ -80,6 +81,7 @@ BLOCK_FACTOR = 5       # ...and this many times the usual day
 DISK_PCT = 80
 CERT_DAYS = 14
 KEEP_DAYS = 400
+DAILY_ROWS = 60        # days published one by one for ERPNext's daily table
 
 LINE = re.compile(r'^(\S+) \S+ \S+ \[([^\]]+)\] "(?:\S+ (\S+)[^"]*|[^"]*)" (\d{3}) \S+ "([^"]*)" "([^"]*)"')
 TILE = re.compile(r"^/data/t_(-?\d+)_(-?\d+)\.json")
@@ -503,6 +505,26 @@ def main():
         }
 
     vw, vp = visits(week), visits(prior)
+
+    # one row per day for ERPNext's daily table (TM Sea State Day), the last
+    # DAILY_ROWS days that have a file, so a missed pull fills itself in
+    daily = []
+    for i in range(DAILY_ROWS, 0, -1):
+        dd = today - datetime.timedelta(days=i)
+        if not os.path.exists(os.path.join(DAILY, dd.isoformat() + ".json")):
+            continue
+        r = load(dd)
+        v1 = visits([r])
+        f1 = v1["funnel"]
+        daily.append({
+            "day": r["day"], "visitors": f1["visitors"], "page_views": v1["page_views"],
+            "place_visitors": f1["place"]["visitors"], "places": f1["place"]["n"],
+            "pdf": f1["pdf"]["n"], "share": f1["share"]["n"], "cta": f1["cta"]["n"],
+            "li": f1["li"]["n"], "fb": f1["fb"]["n"],
+            "lookups": r["lookups"], "data_visitors": r["visitors"],
+            "team_hits": v1["team_hits"],
+            "sources": v1["sources"], "top_places": v1["places"][:8],
+        })
     vdays = []
     for r in week:
         hh = r.get("hits") or {}
@@ -556,6 +578,7 @@ def main():
         },
         "visits": {"week": vw, "prior": vp, "days": vdays,
                    "internal_requests": sum(r.get("internal_requests") or 0 for r in week)},
+        "daily": daily,
         "health": h,
         "alerts": alerts,
         "thresholds": {"scrape_files": SCRAPE_FILES, "block_min": BLOCK_MIN, "block_factor": BLOCK_FACTOR,

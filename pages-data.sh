@@ -7,9 +7,9 @@
 #   wget -q raw.githubusercontent.com/bnhly/seastate-temp/kit/pages-data.sh
 #   bash pages-data.sh
 #
-# Takes the location list from the kit's build_pages.py, keeps every cell
-# within 3 degrees of each location from the tiles the page builder would
-# search, and writes them as the bundle build_pages.py --bundle reads.
+# Takes the location list from the kit's build_pages.py, keeps the one cell
+# the page builder reads for each location (the nearest with data, found by
+# its own search), and writes them as the bundle build_pages.py --bundle reads.
 # Nothing on the site changes. "bash pages-data.sh clean" deletes the zip.
 
 set -u
@@ -37,17 +37,14 @@ sys.path.insert(0, work)
 import build_pages as BP
 store = BP.TileStore(data)
 keep = {}
+# the page builder reads ONE cell per location, the nearest with data
+# (TileStore.nearest_cell), so that cell is all the bundle carries
 for loc in BP.LOCATIONS:
-    lat, lon = loc[1], loc[2]
-    for tid in store.probe_ids(lat, lon):
-        t = store.load_tile(tid)
-        if not t:
-            continue
-        s = keep.setdefault(tid, set())
-        for c in range(len(t["lat"])):
-            dl = abs(((t["lon"][c] - lon + 180) % 360) - 180)
-            if abs(t["lat"][c] - lat) <= 3 and dl <= 3 / max(0.2, math.cos(math.radians(lat))):
-                s.add(c)
+    best = store.nearest_cell(loc[1], loc[2])
+    if best is None:
+        continue
+    tid = [k for k, v in store.tiles.items() if v is best["tile"]][0]
+    keep.setdefault(tid, set()).add(best["idx"])
 tiles = {}
 for tid, cells in keep.items():
     if not cells:

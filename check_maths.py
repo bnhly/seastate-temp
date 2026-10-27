@@ -85,6 +85,12 @@ def decode(tile, c, mf):
     if wm or w9:
         d["wind"] = {"mean": [wm[m] / 10.0 if wm and wm[m] >= 0 else None for m in range(12)],
                      "p90": [w9[m] / 10.0 if w9 and w9[m] >= 0 else None for m in range(12)]}
+        wq = tile["wq"][c] if tile.get("wq") else None
+        qp = mf.get("wind_q")
+        if wq and qp and len(wq) == 12 * len(qp):
+            d["wind"]["qp"] = qp
+            d["wind"]["q"] = [None if wq[m * len(qp)] < 0 else [x / 10.0 for x in wq[m * len(qp):(m + 1) * len(qp)]]
+                              for m in range(12)]
     pw = tile["pw"][c] if tile.get("pw") else None
     if pw:
         runs = []
@@ -108,7 +114,7 @@ def decode(tile, c, mf):
 # ---------------------------------------------- the browser's formulas (B)
 
 def formula_combine(d, months, thresholds):
-    """data.js combineMonths: month-length weighted, masked months left out."""
+    """data.js combineMonths: sample weighted (27 Oct 26), masked months left out."""
     used = [m for m in months if d["n"][m] > 0 and d["exc"][m][0] is not None]
     out = []
     for ti in range(len(thresholds)):
@@ -117,8 +123,8 @@ def formula_combine(d, months, thresholds):
             v = d["exc"][m][ti]
             if v is None:
                 continue
-            num += MONTH_DAYS[m] * v
-            den += MONTH_DAYS[m]
+            num += d["n"][m] * v
+            den += d["n"][m]
         out.append(num / den if den > 0 else None)
     return out
 
@@ -174,6 +180,40 @@ def formula_mean(d, months):
     return s / n if n else None
 
 
+def formula_windq(d, months, prob):
+    """data.js windQuantile."""
+    w = d["wind"]
+    qp = w["qp"]
+    used = [m for m in months if w["q"][m]]
+    if not used:
+        return None
+
+    def cdf(m, x):
+        sp = w["q"][m]
+        if x <= 0:
+            return 0.0
+        if x <= sp[0]:
+            return qp[0] * x / max(sp[0], 1e-9)
+        for k in range(1, len(sp)):
+            if x <= sp[k]:
+                return (qp[k - 1] + (x - sp[k - 1]) / (sp[k] - sp[k - 1]) * (qp[k] - qp[k - 1])
+                        if sp[k] > sp[k - 1] else qp[k])
+        top = sp[-1] * 1.1 + 0.5
+        return 1.0 if x >= top else qp[-1] + (x - sp[-1]) / (top - sp[-1]) * (1 - qp[-1])
+
+    def F(x):
+        return sum(MONTH_DAYS[m] * cdf(m, x) for m in used) / sum(MONTH_DAYS[m] for m in used)
+
+    lo, hi = 0.0, 80.0
+    for it in range(60):
+        mid = (lo + hi) / 2
+        if F(mid) < prob:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
 def formula_wind(d, months):
     """data.js windSummary: month-length weighted average of monthly figures."""
     if not d["wind"]:
@@ -188,7 +228,12 @@ def formula_wind(d, months):
             den9 += MONTH_DAYS[m]
     if not den and not den9:
         return None
-    return {"mean": num / den if den else None, "p90": num9 / den9 if den9 else None}
+    out = {"mean": num / den if den else None, "p90": num9 / den9 if den9 else None}
+    if "q" in d["wind"]:
+        q90 = formula_windq(d, months, 0.9)
+        if q90 is not None:
+            out["p90"] = q90
+    return out
 
 
 def formula_windows(d, thr_idx, edge_idx, thresholds):
@@ -285,11 +330,12 @@ def consistency(tile, tid, c, mf, d, tally, max_n):
             # E[H] = integral of the exceedance curve; with it known only at
             # the stored heights, the mean lies between the lower and upper
             # step sums (tail above the top height bounded by the top value
-            # carried to 15 m, where the histogram clamps)
+            # carried to 20 m: the histogram clamps at 15 m but the mean is
+            # summed from the real heights, and 20 m is above any real sea)
             S = [1.0] + [v / 1000.0 for v in row]
             H = [0.0] + list(thr)
             lo = sum((H[k] - H[k - 1]) * S[k] for k in range(1, len(H)))
-            hi = sum((H[k] - H[k - 1]) * S[k - 1] for k in range(1, len(H))) + S[-1] * (15.0 - H[-1])
+            hi = sum((H[k] - H[k - 1]) * S[k - 1] for k in range(1, len(H))) + S[-1] * (20.0 - H[-1])
             tol = 0.05 + 0.0005 * H[-1]
             tally.add("mean inside the bounds of its exceedance curve", lo - tol <= mean / 10.0 <= hi + tol,
                       "%s month %d mean %.1f bounds %.2f to %.2f" % (where, m + 1, mean / 10.0, lo, hi))
@@ -407,8 +453,8 @@ def truth_layer(args, mf, rep, summary):
     rep.append("")
     rep.append("## C. What the browser shows against the full record (%d cells)" % args.sample)
     rep.append("Checkpoint `%s`. Truth per cell: exceedance from the 0.25 m histogram (exact at "
-               "every limit used here, all on bin edges), month-length weighted for several months "
-               "(the time the sea spends above the limit); the mean from the sum of every sample; "
+               "every limit used here, all on bin edges), pooled over the months chosen, every sample once "
+               "(the share of the record above the limit); the mean from the sum of every sample; "
                "the 1-in-100 and wind top 10%% from the pooled histograms with the emitter's own "
                "bin-edge rule, so only the browser's way of combining is being judged." % ck)
     rng = random.Random(20261026)
@@ -477,6 +523,16 @@ def truth_layer(args, mf, rep, summary):
                 return (b + 1) * width
         return len(hrow) * width
 
+    def interp_q(hrow, q):
+        """The emitter's wind_quantiles rule (inside the 1 m/s bins), on a pooled histogram."""
+        cum = np.cumsum(hrow)
+        target = q * hrow.sum()
+        b = min(int(np.searchsorted(cum, target, side="left")), len(hrow) - 1)
+        before = float(cum[b - 1]) if b > 0 else 0.0
+        frac = (target - before) / hrow[b] if hrow[b] > 0 else 0.0
+        return round(b + min(1.0, max(0.0, frac)), 1)
+
+    new_wind = bool(mf.get("wind_q"))
     errs = {}
 
     def note(key, e):
@@ -485,9 +541,12 @@ def truth_layer(args, mf, rep, summary):
 
     for k, x in enumerate(cells):
         for name, months in SEASONS.items():
-            tw = [MONTH_DAYS[m] for m in months]
+            # the share of the record above the limit, every sample counted once
+            # (the definition since 27 Oct 26: samples, so a month cut short by
+            # sea ice counts for the open water it had)
+            pooled = hist[months, k, :].sum(axis=0)
             for li, h in enumerate(LIMITS):
-                tv = sum(tw[q] * pct_at_least(hist[m, k], h) for q, m in enumerate(months)) / sum(tw)
+                tv = pct_at_least(pooled, h)
                 bv = x["b"]["exc|" + name][li]
                 on = any(abs(h - t) < 1e-9 for t in mf["thresholds"])
                 note("exc %s %s" % (name, "on a stored height" if on else "between stored heights"),
@@ -503,7 +562,7 @@ def truth_layer(args, mf, rep, summary):
             if wind is not None and x["b"]["wind|" + name]:
                 wh = wind["hist"][months, k, :].sum(axis=0)
                 if wh.sum() > 0:
-                    t90 = upper_edge(wh, 0.9, 1.0)
+                    t90 = interp_q(wh, 0.9) if new_wind else upper_edge(wh, 0.9, 1.0)
                     tmean = wind["sum"][months, k].sum() / max(1.0, wind["n"][months, k].sum())
                     bmn, b90 = x["b"]["wind|" + name]
                     note("wind mean %s" % name, None if bmn is None else bmn - tmean)

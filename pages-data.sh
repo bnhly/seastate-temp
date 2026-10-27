@@ -20,9 +20,12 @@ if [ "$(id -u)" != 0 ]; then echo "run this as root"; exit 1; fi
 if [ ! -f "$WEB/data/manifest.json" ]; then echo "WRONG SERVER: no $WEB/data here."; exit 1; fi
 if [ ! -s "$BASE/stats_token" ]; then echo "no stats token here; run stats.sh first"; exit 1; fi
 TOKEN=$(cat "$BASE/stats_token")
-OUT="$WEB/stats/$TOKEN-pages.zip"
+# a new name each run: browsers keep files from this server for a day,
+# so a second download from the same address can be the old zip
+OUT="$WEB/stats/$TOKEN-pages-$(date -u +%H%M%S).zip"
 
-if [ "${1:-}" = "clean" ]; then rm -f "$OUT"; echo "deleted"; exit 0; fi
+if [ "${1:-}" = "clean" ]; then rm -f "$WEB/stats/$TOKEN-pages"*.zip; echo "deleted"; exit 0; fi
+rm -f "$WEB/stats/$TOKEN-pages"*.zip
 if [ -f "$BASE/rebuild/pid" ] && kill -0 "$(cat "$BASE/rebuild/pid")" 2>/dev/null; then
   echo "the rebuild is still running; run this after it finishes"; exit 1
 fi
@@ -75,6 +78,6 @@ rm -rf "$WORK"
 echo
 echo "READY. Open this in your browser to download it, then attach it in the chat:"
 echo
-echo "    https://seastate-data.thrustm.com/stats/$TOKEN-pages.zip"
+echo "    https://seastate-data.thrustm.com/stats/$(basename "$OUT")"
 echo
 echo "Afterwards: bash pages-data.sh clean"

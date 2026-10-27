@@ -1,17 +1,17 @@
 #!/bin/bash
-# video_data.sh - packs the live data a Bass Strait video needs into one zip
+# video-data.sh - packs the live data a Bass Strait video needs into one zip
 # you can download, so it can be recorded away from the data host with the
 # real numbers (27 Oct 26, the LinkedIn video).
 #
-#   rm -f video_data.sh
-#   wget -q raw.githubusercontent.com/bnhly/seastate-temp/kit/video_data.sh
-#   bash video_data.sh
+#   rm -f video-data.sh
+#   wget -q raw.githubusercontent.com/bnhly/seastate-temp/kit/video-data.sh
+#   bash video-data.sh
 #
 # Puts every manifest, the world map shading, the oil and gas assets and the
 # cyclone tracks in, plus each tile of every layer around Bass Strait (tile
 # corners 50S to 30S, 130E to 150E). Nothing else changes on the server.
 # It prints a link to download the zip from.
-# "bash video_data.sh clean" deletes the zip afterwards.
+# "bash video-data.sh clean" deletes the zip afterwards.
 
 set -u
 BASE=/root/seastate
@@ -59,4 +59,4 @@ echo "READY. Open this in your browser to download it, then attach it in the cha
 echo
 echo "    https://seastate-data.thrustm.com/stats/$TOKEN-video.zip"
 echo
-echo "Afterwards: bash video_data.sh clean"
+echo "Afterwards: bash video-data.sh clean"

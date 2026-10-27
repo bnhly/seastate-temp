@@ -12,11 +12,13 @@
 # the cron line, and reruns the summary.
 #
 # WHAT IT DOES
-#   - writes /root/seastate/stats_report.py and runs it every night at
-#     00:40 UTC (cron). It reads the nginx access logs, keeps one small
+#   - writes /root/seastate/stats_report.py and runs it every 6 hours
+#     (00:40, 06:40, 12:40 and 18:40 UTC, cron). It reads the nginx access logs, keeps one small
 #     file per day under /root/seastate/stats/daily/ (a year of them) and
 #     publishes the last 7 days as /stats/<token>.json on this host, plus
-#     the last 60 days one by one ("daily") for ERPNext's TM Sea State Day.
+#     the last 60 days one by one ("daily") for ERPNext's TM Sea State Day,
+#     today included as a row marked partial (today so far, Ben 27 Oct 26).
+#     The 00:40 run finishes yesterday; the email numbers use finished days.
 #   - makes the token once (/root/seastate/stats_token, 20 lowercase hex
 #     characters) and prints it. The ERPNext script needs it.
 #   - runs the summary straight away over whatever the logs already hold.
@@ -47,7 +49,8 @@ mkdir -p "$BASE/stats/daily" "$WEB/stats"
 cat > "$BASE/stats_report.py" <<'PY'
 #!/usr/bin/env python3
 # stats_report.py - nightly usage summary for the Sea State data host.
-# Installed by stats.sh; runs from cron at 00:40 UTC. Log: stats.log
+# Installed by stats.sh; runs from cron every 6 hours (:40 past 0, 6, 12, 18 UTC).
+# Log: stats.log
 #
 # Reads the nginx access logs (current and rotated), works out each complete
 # UTC day, keeps one small file per day under /root/seastate/stats/daily/ and
@@ -310,7 +313,7 @@ def parse(today):
                         datetime.timezone.utc).date()
                 except ValueError:
                     continue
-                if day >= today:
+                if day > today:
                     continue
                 d = days.get(day)
                 if d is None:
@@ -507,9 +510,10 @@ def main():
     vw, vp = visits(week), visits(prior)
 
     # one row per day for ERPNext's daily table (TM Sea State Day), the last
-    # DAILY_ROWS days that have a file, so a missed pull fills itself in
+    # DAILY_ROWS days that have a file, so a missed pull fills itself in;
+    # the last is today so far, marked partial and finished by a later run
     daily = []
-    for i in range(DAILY_ROWS, 0, -1):
+    for i in range(DAILY_ROWS - 1, -1, -1):
         dd = today - datetime.timedelta(days=i)
         if not os.path.exists(os.path.join(DAILY, dd.isoformat() + ".json")):
             continue
@@ -524,6 +528,7 @@ def main():
             "lookups": r["lookups"], "data_visitors": r["visitors"],
             "team_hits": v1["team_hits"],
             "sources": v1["sources"], "top_places": v1["places"][:8],
+            "partial": dd == today,
         })
     vdays = []
     for r in week:
@@ -602,7 +607,7 @@ if __name__ == "__main__":
 PY
 chmod +x "$BASE/stats_report.py"
 
-( crontab -l 2>/dev/null | grep -v stats_report.py; echo "40 0 * * * /usr/bin/python3 /root/seastate/stats_report.py >> /root/seastate/stats.log 2>&1" ) | crontab -
+( crontab -l 2>/dev/null | grep -v stats_report.py; echo "40 */6 * * * /usr/bin/python3 /root/seastate/stats_report.py >> /root/seastate/stats.log 2>&1" ) | crontab -
 
 echo "=== stats.sh $(date -u) ==="
 if python3 "$BASE/stats_report.py"; then

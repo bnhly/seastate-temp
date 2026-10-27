@@ -238,6 +238,10 @@ def spot_recompute(rep, args, acc):
     if "wind_n" not in acc and getattr(args, "era5_workdir", None):
         z = np.load(os.path.join(args.era5_workdir, "seastate_accum.npz"), allow_pickle=False)
         e5w = {"wind_hist": z["wind_hist"], "wind_sum": z["wind_sum"], "wind_n": z["wind_n"]}
+        # the emitter's ice rule for grafted wind (load_era5_wind): a source
+        # cell-month under 30% of that month's busiest cell gives no wind
+        wn_max = np.maximum(e5w["wind_n"].reshape(12, -1).max(axis=1), 1)
+        e5w["ok"] = e5w["wind_n"] >= (0.3 * wn_max)[:, None, None]
     max_ns = [max(1, int(acc["nsamp"][m].max())) for m in range(12)]
     n_years = max(1.0, len(acc["done"]) / 12.0)
     checked = 0
@@ -294,13 +298,13 @@ def spot_recompute(rep, args, acc):
                 if tile["wm"][c][m] != want:
                     mism.append("%s cell %d wm[%d]" % (tiles[ti - 1], c, m))
             elif e5w is not None:
-                ei = int(np.clip(round((la - (-90.0)) / 0.5), 0, e5w["wind_n"].shape[1] - 1))
-                ej = int(np.clip(round(((lo - (-180.0)) % 360.0) / 0.5), 0,
-                                 e5w["wind_n"].shape[2] - 1))
+                # the emitter's own lookups (its column wraps at the dateline)
+                ei = B.e5_row(la, e5w["wind_n"].shape[1])
+                ej = B.e5_col(lo, e5w["wind_n"].shape[2])
                 wn = int(e5w["wind_n"][m, ei, ej])
                 wtot = int(e5w["wind_hist"][m, ei, ej].sum())
                 want = int(np.round(10.0 * float(e5w["wind_sum"][m, ei, ej]) / max(wn, 1))) \
-                    if (valid and wtot > 0) else -1
+                    if (valid and wtot > 0 and bool(e5w["ok"][m, ei, ej])) else -1
                 if tile["wm"][c][m] != want:
                     mism.append("%s cell %d wm-graft[%d]" % (tiles[ti - 1], c, m))
             # one weather-window entry: threshold 1.5 m, 12-24 h bin
@@ -321,6 +325,10 @@ def invariants(rep, args):
     with open(os.path.join(args.data, "manifest.json")) as fh:
         mf = json.load(fh)
     NT = len(mf["thresholds"])
+    # on WAVERYS the ENSO phases come from the ERA5 graft, whose years differ
+    # from the wave record (1980-2024 against 1980-2023), so their counts are
+    # not bounded by the wave n; the bound only holds where both are one record
+    enso_graft = "graft" in str((mf.get("enso") or {}).get("source") or "")
     bad = []
     cells = 0
     for tid in mf["tiles"]:
@@ -367,7 +375,7 @@ def invariants(rep, args):
                     # below n (a merged span may predate phase tagging) but
                     # never above it
                     tot = pn[m * 3] + pn[m * 3 + 1] + pn[m * 3 + 2]
-                    if tot > t["n"][c][m]:
+                    if not enso_graft and tot > t["n"][c][m]:
                         bad.append("%s c%d m%d enso n %d > %d" % (tid, c, m, tot, t["n"][c][m]))
                     for p in range(3):
                         row = pe[(m * 3 + p) * NT:(m * 3 + p + 1) * NT]

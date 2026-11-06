@@ -18,7 +18,7 @@ IP="${1:-}"
 if [ -z "$IP" ]; then echo "give the address, e.g.  bash who.sh 185.212.234.65"; exit 1; fi
 
 python3 - "$IP" "${TM_WHO_LOGS:-/var/log/nginx/access.log*}" <<'PY'
-import collections, datetime, glob, gzip, re, sys
+import collections, datetime, glob, gzip, re, sys, urllib.parse
 ip, logglob = sys.argv[1], sys.argv[2]
 LINE = re.compile(r'^(\S+) \S+ \S+ \[([^\]]+)\] "(?:\S+ (\S+)[^"]*|[^"]*)" (\d{3}) \S+ "([^"]*)" "([^"]*)"')
 KINDS = [("wave tiles", r"^/data/t_"), ("depth", r"^/data/depth/"), ("currents", r"^/data/cur/"),
@@ -53,7 +53,7 @@ for path in sorted(glob.glob(logglob)):
             d["status"][status] += 1
             url = url or ""
             if url.startswith("/hit?"):
-                q = dict(x.split("=", 1) for x in url.split("?", 1)[1].split("&") if "=" in x)
+                q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
                 d["hits"][q.get("e", "?")] += 1
                 if q.get("e") == "place" and q.get("g"):
                     places[q["g"]] += 1

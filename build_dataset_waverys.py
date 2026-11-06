@@ -444,6 +444,21 @@ def wind_quantiles(cache, m, ei, ej, wh, wtot):
     return out
 
 
+RV_FIELDS = ["n", "hs1", "hs10", "hs50", "hs100", "se10", "se50", "se100",
+             "tp10", "tp50", "tp90", "tz10", "tz50", "tz90", "alt100", "sw50"]
+SRV_FIELDS = ["n", "hs10", "hs50", "hs100", "se100", "tp50"]
+SW_THR_N = 16                    # swell exceedance stored at 0.25 .. 4.0 m
+RV_METHOD = ("Annual maxima of 3-hourly Hs, years summer to summer (DNV-RP-C205 3.6.2.5), "
+             "Gumbel fitted by the method of moments (3.6.2.4), T-year value at 1 - 1/T "
+             "(3.7.1.3), at least 20 complete years; se = Kite (1977) standard error of the "
+             "moment estimate; tp / tz = 10th, 50th, 90th percentile of the period in the "
+             "annual-maximum sea states; hs1 = Hs exceeded by 1 in 2922 sea states (3.7.1.2); "
+             "alt100 = 3-parameter Weibull on all sea states (3.6.2.1), the cross-check "
+             "3.6.2.4 asks for; sw50 = median primary swell Hs in the annual-maximum sea "
+             "states. srv = the same Gumbel fit per season from that season's three-month "
+             "maxima. Statistical estimates, not design values.")
+
+
 def run_emit(args, acc=None):
     if acc is None:
         acc = load_accumulator(args.workdir)
@@ -518,6 +533,19 @@ def run_emit(args, acc=None):
         del wind["en_hsum"]
         en = {"ns": en_ns_g, "exc": en_exc_g, "mean": en_mean_g}
 
+    # return values and Tz from the separate extremes pass (extremes_waverys.py)
+    ex = None
+    exw = getattr(args, "extremes_workdir", None)
+    if exw:
+        import extremes_waverys as X
+        ex = X.Extremes(exw)
+        print("extremes: %d months, %d northern / %d southern years"
+              % (len(ex.keys), len(ex.years[True]), len(ex.years[False])))
+
+    def d10(v):
+        v = float(v)
+        return int(round(10.0 * v)) if math.isfinite(v) else -1
+
     thr_bins = [int(round(t / HS_BIN)) for t in THRESHOLDS]
     NT = len(THRESHOLDS)
     tile_ids = []
@@ -570,6 +598,12 @@ def run_emit(args, acc=None):
         p999_a = pctl(cum_all, tot_all, 0.999)
         p99_a[tot_all == 0] = -1
         p999_a[tot_all == 0] = -1
+        if ex is not None:
+            north = LAT0 + r0 * RES >= -1e-6
+            am_b, fit_b, amd_b, seas_b = ex.band(r0, r1, north)
+            sx_b, msw_b, mww_b, sr_b = ex.swell_band(r0, r1, valid_b)
+            hs1_b, alt_b = X.hs_from_histogram(hs_all, tot_all, HS_BIN)
+            tz_ds_b, tz_pml_b = ex.tz_band(r0, r1, valid_b)
         del hs_all, cum_all
 
         tp32 = acc["tp_hist"][:, r0:r1, :].astype(np.int32)
@@ -637,7 +671,9 @@ def run_emit(args, acc=None):
                                        "exc": [], "tp": [], "th": [], "wd": [], "wp": [], "wr": [],
                                        "hx": [], "hxa": [], "wm": [], "w9": [], "wq": [], "pw": [],
                                        "dh": [], "dw": [], "vd": [], "vp": [], "vr": [],
-                                       "pn": [], "pm": [], "pe": []})
+                                       "pn": [], "pm": [], "pe": [],
+                                       "rv": [], "ram": [], "tz": [], "zh": [],
+                                       "ramd": [], "srv": [], "sx": [], "sm": [], "sr": []})
             t["lat"].append(round(lat, 2))
             t["lon"].append(round(lon, 2))
             t["n"].append([int(ns_b[m, ib, j]) for m in range(12)])
@@ -728,6 +764,33 @@ def run_emit(args, acc=None):
                 t["pn"].append([])
                 t["pm"].append([])
                 t["pe"].append([])
+            if ex is not None:
+                fb = fit_b
+                t["rv"].append([int(fb["n"][ib, j])] +
+                               [d10(v) for v in (hs1_b[ib, j], fb["hs10"][ib, j], fb["hs50"][ib, j],
+                                                 fb["hs100"][ib, j], fb["se10"][ib, j],
+                                                 fb["se50"][ib, j], fb["se100"][ib, j],
+                                                 fb["tp10"][ib, j], fb["tp50"][ib, j],
+                                                 fb["tp90"][ib, j], fb["tz10"][ib, j],
+                                                 fb["tz50"][ib, j], fb["tz90"][ib, j],
+                                                 alt_b[ib, j], fb["sw50"][ib, j])])
+                t["ram"].append([d10(v) for v in am_b[:, ib, j]])
+                t["ramd"].append([int(v) for v in amd_b[:, ib, j]])
+                srow = []
+                for nm9, sf in seas_b:
+                    srow.append(int(sf["n"][ib, j]))
+                    srow.extend(d10(sf[k9][ib, j]) for k9 in SRV_FIELDS[1:])
+                t["srv"].append(srow)
+                t["sx"].append([int(sx_b[m, ib, j, c9, b9]) for m in range(12)
+                                for c9 in range(X.SW_NC) for b9 in range(SW_THR_N)])
+                t["sm"].append([int(v) for m in range(12) for v in (msw_b[m, ib, j], mww_b[m, ib, j])])
+                t["sr"].append([int(sr_b[m, ib, j, s9]) for m in range(12) for s9 in range(X.SW_SECT)])
+                t["tz"].append([int(tz_ds_b[m, ib, j]) for m in range(12)])
+                t["zh"].append([int(tz_pml_b[m, ib, j, b])
+                                for m in range(12) for b in range(X.TZ_NB)])
+            else:
+                for k9 in ("rv", "ram", "tz", "zh", "ramd", "srv", "sx", "sm", "sr"):
+                    t[k9].append([])
             flat = []
             for m in range(12):
                 if valid_b[m, ib, j]:
@@ -795,6 +858,28 @@ def run_emit(args, acc=None):
                           "graft period, not WAVERYS; compare phases against each other, "
                           "not against the headline mean"}
                  if en is not None else False),
+        # return values: rv per cell is RV_FIELDS (x10, n raw, -1 = none);
+        # ram is that cell's annual maxima x10 over years_n (cells at or north
+        # of the equator, July to June) or years_s (south, calendar year)
+        "rv": ({"fields": RV_FIELDS,
+                "years_n": ex.years[True], "years_s": ex.years[False],
+                "min_years": X.MIN_YEARS, "return_years": X.RETURN_YEARS,
+                "months": len(ex.keys), "span": "%s to %s" % (ex.keys[0], ex.keys[-1]),
+                "date": "ramd = month * 100 + day of each annual maximum (-1 none); north of "
+                        "the equator a month before July is in the year after the label",
+                "seasons": [nm for nm, _ in X.SEASONS], "srv_fields": SRV_FIELDS,
+                "method": RV_METHOD}
+               if ex is not None else False),
+        # primary swell (VHM0_SW1) and wind sea (VHM0_WW): sx per cell is
+        # [month][period floor][height] permille of sea states with swell Hs at
+        # or above the height and swell Tm01 at or above the floor; sm is
+        # [month][mean swell Hs, mean wind-sea Hs] x10; sr the swell rose in %
+        "swell": ({"thresholds": [round(X.SW_BIN * (b + 1), 2) for b in range(SW_THR_N)],
+                   "period_floors": [0] + X.SW_TCLS, "period": "VTM01_SW1 (mean period, primary swell)",
+                   "sectors": X.SW_SECT, "rose_min_hs": X.SW_ROSE_MIN}
+                  if ex is not None else False),
+        "tz_hist": ({"t0": X.TZ_T0, "step": X.TZ_BIN, "nb": X.TZ_NB}
+                    if ex is not None else False),
         "tile_deg": TILE_DEG,
         "max_snap_km": 150,
         "tiles": sorted(tile_ids),
@@ -874,12 +959,57 @@ def run_synthetic(args):
              en_hist0=en_hi[0], en_hist1=en_hi[1], en_hist2=en_hi[2])
     del en_ns, en_hs, en_hi, wrose, dw_sum, dw_cnt, e5
 
+    # a fake extremes workdir: 21 calendar years of month keys, every cell's
+    # monthly maximum 0 except the probe, whose July-June years peak at
+    # 4.00, 4.25, ... 8.75 m (exact in float16) in January, Tp 10 s and Tz 7 s
+    # (even years) or 8 s (odd); Tz histogram all in bin 10 (6.0-6.5 s)
+    import extremes_waverys as X
+    xw = os.path.join(args.workdir, "ex")
+    os.makedirs(os.path.join(xw, X.MONTH_DIR), exist_ok=True)
+    xkeys = ["%04d-%02d" % (y, m) for y in range(2001, 2022) for m in range(1, 13)]
+    for k9 in xkeys:
+        open(os.path.join(xw, X.MONTH_DIR, k9 + ".npz"), "wb").close()
+    xpos = {k9: i9 for i9, k9 in enumerate(xkeys)}
+    for nm in X.STACK:
+        mm9 = np.lib.format.open_memmap(os.path.join(xw, nm + ".npy"), mode="w+",
+                                        dtype=X.STACK_DT.get(nm, np.float16), shape=(len(xkeys), NLAT, NLON))
+        col = {"mx": 1.0, "tpm": 9.0, "tzm": 6.0, "swm": 0.5, "dmx": 3}[nm]
+        mm9[:, pi, pj] = col
+        for yk in range(20):
+            i9 = xpos["%04d-01" % (2002 + yk)]
+            mm9[i9, pi, pj] = {"mx": 4.0 + 0.25 * yk, "tpm": 10.0,
+                               "tzm": 7.0 if yk % 2 == 0 else 8.0, "swm": 1.5, "dmx": 15}[nm]
+        mm9.flush()
+        del mm9
+    # histograms: 32 sea states a month at the probe, 16 of 2.1 m swell at
+    # 12 s or more and 16 of 0.6 m at under 8 s, all from sector 7; wind sea 0.8 m
+    hshape = {"tz_hist": (X.TZ_NB,), "sw_hist": (X.SW_NC, X.SW_NB), "sw_rose": (X.SW_SECT,),
+              "sw_sum": (), "ww_sum": (), "ww_n": ()}
+    hdt = {"sw_sum": np.float32, "ww_sum": np.float32}
+    for nm in X.HIST_KEYS:
+        h9 = np.lib.format.open_memmap(os.path.join(xw, nm + ".npy"), mode="w+",
+                                       dtype=hdt.get(nm, np.uint16), shape=(12, NLAT, NLON) + hshape[nm])
+        if nm == "tz_hist":
+            h9[:, pi, pj, 10] = 32
+        elif nm == "sw_hist":
+            h9[:, pi, pj, 2, 8] = 16
+            h9[:, pi, pj, 0, 2] = 16
+        elif nm == "sw_rose":
+            h9[:, pi, pj, 7] = 32
+        else:
+            h9[:, pi, pj] = {"sw_sum": 16 * 2.1 + 16 * 0.6, "ww_sum": 32 * 0.8, "ww_n": 32}[nm]
+        h9.flush()
+        del h9
+    with open(os.path.join(xw, "stack_keys.json"), "w") as fh:
+        json.dump(xkeys, fh)
+
     class A(object):
         pass
     ea = A()
     ea.workdir = args.workdir
     ea.out = args.out
     ea.era5_workdir = args.workdir
+    ea.extremes_workdir = xw
     run_emit(ea, acc)
 
     with open(os.path.join(args.out, "manifest.json")) as fh:
@@ -936,6 +1066,48 @@ def run_synthetic(args):
             row = pt["pw"][pk][m * len(P_THR) * P_NB + x * P_NB:
                                m * len(P_THR) * P_NB + x * P_NB + P_NB]
             assert row[2] == 20 and sum(row) == 20, (m, x, row)
+    # return values at the probe, against a hand moment fit
+    rvm = mf["rv"]
+    assert rvm and rvm["fields"] == RV_FIELDS and rvm["years_n"] == list(range(2001, 2021)), rvm
+    assert rvm["years_s"] == list(range(2001, 2022)) and mf["tz_hist"]["nb"] == X.TZ_NB
+    a9 = [4.0 + 0.25 * k for k in range(20)]
+    mu9 = sum(a9) / 20.0
+    s9 = math.sqrt(sum((v - mu9) ** 2 for v in a9) / 19.0)
+    A9 = s9 * math.sqrt(6.0) / math.pi
+    U9 = mu9 - 0.5772156649 * A9
+    rv9 = dict(zip(RV_FIELDS, pt["rv"][pk]))
+    assert rv9["n"] == 20, rv9
+    for T9 in (10, 50, 100):
+        want = U9 - A9 * math.log(-math.log(1.0 - 1.0 / T9))
+        assert abs(rv9["hs%d" % T9] - 10.0 * want) <= 1, (T9, rv9, want)
+        assert rv9["se%d" % T9] > 0
+    assert rv9["hs10"] < rv9["hs50"] < rv9["hs100"]
+    assert rv9["tp50"] == 100 and rv9["tz10"] == 70 and rv9["tz90"] == 80, rv9
+    assert rv9["hs1"] == -1 and rv9["alt100"] == -1, rv9      # 32 sea states is too few
+    assert pt["ram"][pk] == [int(round(10 * v)) for v in a9], pt["ram"][pk]
+    assert pt["tz"][pk] == [63] * 12, pt["tz"][pk]
+    zh9 = pt["zh"][pk]
+    assert len(zh9) == 12 * X.TZ_NB and all(zh9[m * X.TZ_NB + 10] == 1000 for m in range(12))
+    assert rv9["sw50"] == 15 and pt["ramd"][pk] == [115] * 20, (rv9, pt["ramd"][pk])
+    sv9 = pt["srv"][pk]
+    assert len(sv9) == 4 * len(SRV_FIELDS) and mf["rv"]["seasons"] == ["DJF", "MAM", "JJA", "SON"]
+    djf9 = dict(zip(SRV_FIELDS, sv9[:len(SRV_FIELDS)]))
+    jja9 = dict(zip(SRV_FIELDS, sv9[2 * len(SRV_FIELDS):3 * len(SRV_FIELDS)]))
+    assert djf9["n"] == 20 and djf9["hs100"] == rv9["hs100"] and jja9["n"] == 21 and jja9["hs100"] == 10, sv9
+    sx9 = pt["sx"][pk]
+    NS9 = X.SW_NC * SW_THR_N
+    assert len(sx9) == 12 * NS9 and mf["swell"]["period_floors"] == [0, 8.0, 12.0]
+    for m in range(12):
+        a9 = sx9[m * NS9:(m + 1) * NS9]
+        assert a9[0] == 1000 and a9[1] == 1000 and a9[2] == 500, a9[:SW_THR_N]
+        assert a9[SW_THR_N + 2] == 500 and a9[2 * SW_THR_N + 7] == 500 and a9[2 * SW_THR_N + 8] == 0, a9
+    assert pt["sm"][pk] == [14, 8] * 12, pt["sm"][pk]
+    assert len(pt["sr"][pk]) == 144 and pt["sr"][pk][7] == 100
+    # a southern cell (no extremes data): zero maxima, 21 years
+    with open(os.path.join(args.out, "t_-50_-30.json")) as fh:
+        ts9 = json.load(fh)
+    assert len(ts9["ram"][0]) == 21 and ts9["rv"][0][0] == 21, ts9["rv"][0]
+
     # exceedance monotone on a random busy tile
     with open(os.path.join(args.out, "t_50_-30.json")) as fh:
         tt = json.load(fh)
@@ -955,6 +1127,7 @@ def main():
     ap.add_argument("--years", default="2010-2023", help="inclusive span (WAVERYS runs 1980-2023+)")
     ap.add_argument("--dataset", default=WAV_DATASET)
     ap.add_argument("--era5-workdir", help="ERA5 checkpoint dir: grafts wind statistics at emit")
+    ap.add_argument("--extremes-workdir", help="extremes_waverys.py workdir: adds return values and Tz")
     ap.add_argument("--download", action="store_true")
     ap.add_argument("--emit", action="store_true")
     ap.add_argument("--synthetic", action="store_true")

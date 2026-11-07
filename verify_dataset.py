@@ -199,11 +199,12 @@ def re_emit_compare(rep, args, acc):
         ea.workdir = args.workdir
         ea.out = tmp
         ea.era5_workdir = getattr(args, "era5_workdir", None)
+        ea.extremes_workdir = getattr(args, "extremes_workdir", None)
         B.run_emit(ea, acc)
         fresh = sorted(os.listdir(tmp))
         deployed_names = [n for n in sorted(os.listdir(args.data))
                           if n == "manifest.json" or n == "meanhs.json" or
-                          (n.startswith("t_") and n.endswith(".json"))]
+                          ((n.startswith("t_") or n.startswith("x_")) and n.endswith(".json"))]
         rep.check(fresh == deployed_names, "same file inventory",
                   "%d fresh vs %d deployed emitter files" % (len(fresh), len(deployed_names)))
         bad = []
@@ -316,7 +317,145 @@ def spot_recompute(rep, args, acc):
                 mism.append("%s cell %d pw[%d]" % (tiles[ti - 1], c, m))
             checked += 1
     rep.check(not mism, "%d sampled cells recomputed from first principles" % checked,
-              ("%d mismatches, e.g. %s" % (len(mism), mism[0])) if mism else "0 mismatches")
+              ("%d mismatches, e.g. %s" % (len(mism), "; ".join(mism[:8]))) if mism else "0 mismatches")
+
+
+def load_tile(data, tid):
+    """A tile with its extremes sidecar (x_...) merged in, when there is one."""
+    with open(os.path.join(data, tid + ".json")) as fh:
+        t = json.load(fh)
+    xp = os.path.join(data, "x" + tid[1:] + ".json")
+    if os.path.exists(xp):
+        with open(xp) as fh:
+            x = json.load(fh)
+        if x["lat"] != t["lat"] or x["lon"] != t["lon"]:
+            raise SystemExit("sidecar %s does not match its tile's cells" % xp)
+        for k, v in x.items():
+            if k not in ("format", "lat", "lon"):
+                t[k] = v
+    return t
+
+
+def extremes_recompute(rep, args):
+    """Return values recomputed from the month files of the extremes pass
+    (not the stacked copy the emitter maps), in plain Python: annual maxima
+    per summer-to-summer year, Gumbel by moments, the 10, 50 and 100-year Hs
+    within 0.1 m, the annual maxima list exactly, and the median Tz bin."""
+    rep.add("")
+    rep.add("## 4b. Return values recomputed (%d cells)" % min(args.sample, 200))
+    rep.add("Formulas: year = July to June north of the equator, January to December "
+            "south (DNV-RP-C205 3.6.2.5); a year counts only with all 12 months present; "
+            "Gumbel A = s * sqrt(6) / pi, U = mean - 0.5772 A (3.6.2.4); "
+            "Hs(T) = U - A ln(-ln(1 - 1/T)) (3.7.1.3); at least 20 years.")
+    with open(os.path.join(args.data, "manifest.json")) as fh:
+        mf = json.load(fh)
+    rv = mf.get("rv")
+    if not rv:
+        rep.check(False, "manifest carries return values", "no rv in manifest")
+        return
+    F = rv["fields"]
+    mdir = os.path.join(args.extremes_workdir, "months")
+    keys = sorted(f[:-4] for f in os.listdir(mdir) if f.endswith(".npz"))
+    rng = random.Random(20261106)
+    tiles = list(mf["tiles"])
+    rng.shuffle(tiles)
+    want_n = min(args.sample, 200)
+    picks = []
+    for tid in tiles:
+        if len(picks) >= want_n:
+            break
+        t = load_tile(args.data, tid)
+        c = rng.randrange(len(t["lat"]))
+        picks.append((tid, c, t["lat"][c], t["lon"][c], t["rv"][c], t["ram"][c], t["tz"][c],
+                      t.get("ramd", [[]] * (c + 1))[c], t.get("sx", [[]] * (c + 1))[c],
+                      t.get("n")[c]))
+    ij = [(int(round((p[2] - B.LAT0) / B.RES)), int(round((p[3] - B.LON0) / B.RES))) for p in picks]
+    per = {}
+    for key in keys:
+        z = np.load(os.path.join(mdir, key + ".npz"))
+        mx, tzm = z["mx"], z["tzm"]
+        dmx = z["dmx"] if "dmx" in z.files else None
+        per[key] = [(float(mx[i, j]), float(tzm[i, j]), int(dmx[i, j]) if dmx is not None else 0)
+                    for i, j in ij]
+    mism = []
+    for q, p in enumerate(picks):
+        tid, c, la = p[0], p[1], p[2]
+        north = la >= -1e-6
+        years = rv["years_n"] if north else rv["years_s"]
+        am, az, ad = [], [], []
+        for y in years:
+            ms = (["%04d-%02d" % (y, m) for m in range(7, 13)] + ["%04d-%02d" % (y + 1, m) for m in range(1, 7)]) \
+                if north else ["%04d-%02d" % (y, m) for m in range(1, 13)]
+            vals = [per[k][q] for k in ms if k in per]
+            if len(vals) < 12 or any(not math.isfinite(v[0]) for v in vals):
+                am.append(None)
+                az.append(None)
+                ad.append(-1)
+                continue
+            best, bm = vals[0], ms[0]
+            for v, mk in zip(vals[1:], ms[1:]):
+                if v[0] > best[0]:
+                    best, bm = v, mk
+            am.append(best[0])
+            az.append(best[1])
+            ad.append(int(bm[5:7]) * 100 + best[2] if best[2] > 0 else -1)
+        if p[7] and p[7] != ad:
+            mism.append("%s c%d date of an annual maximum" % (tid, c))
+        ram = [-1 if a is None else int(round(10.0 * a)) for a in am]
+        if ram != p[5]:
+            mism.append("%s c%d ram" % (tid, c))
+        got = dict(zip(F, p[4]))
+        a = [x for x in am if x is not None]
+        n = len(a)
+        if got.get("n") != n:
+            mism.append("%s c%d n %s vs %d" % (tid, c, got.get("n"), n))
+            continue
+        if n >= rv["min_years"]:
+            mu = sum(a) / n
+            sd = math.sqrt(sum((x - mu) ** 2 for x in a) / (n - 1))
+            A = sd * math.sqrt(6.0) / math.pi
+            U = mu - 0.5772156649 * A
+            for T in (10, 50, 100):
+                w = 10.0 * (U - A * math.log(-math.log(1.0 - 1.0 / T)))
+                if abs(got["hs%d" % T] - w) > 1.0:
+                    mism.append("%s c%d hs%d %d vs %.1f" % (tid, c, T, got["hs%d" % T], w))
+            zs = sorted(x for x in az if x is not None and math.isfinite(x))
+            if zs:
+                med = zs[len(zs) // 2] if len(zs) % 2 else 0.5 * (zs[len(zs) // 2 - 1] + zs[len(zs) // 2])
+                if abs(got["tz50"] - 10.0 * med) > 1.0:
+                    mism.append("%s c%d tz50" % (tid, c))
+        elif got.get("hs100", -1) != -1:
+            mism.append("%s c%d hs100 with %d years" % (tid, c, n))
+    # swell exceedance from the histogram, plain loops (the npy is a byte
+    # copy of tz_hist.npz made by prepare; the counting here is independent)
+    swp = os.path.join(args.extremes_workdir, "sw_hist.npy")
+    sw = mf.get("swell")
+    if sw and os.path.exists(swp):
+        H = np.load(swp, mmap_mode="r")
+        floors = sw["period_floors"]
+        NTs = len(sw["thresholds"])
+        for q, p in enumerate(picks):
+            if not p[8]:
+                continue
+            i, j = ij[q]
+            m = q % 12
+            cnt = H[m, i, j].astype(np.int64)            # [class, bin]
+            tot = int(cnt.sum())
+            if tot == 0 or p[9][m] <= 0:
+                continue
+            for c9 in range(len(floors)):
+                for b9 in (0, 3, 7):
+                    k = 0
+                    for cl in range(c9, cnt.shape[0]):
+                        for bb in range(b9 + 1, cnt.shape[1]):
+                            k += int(cnt[cl, bb])
+                    want = int(math.floor(1000.0 * k / tot + 0.5))
+                    got = p[8][(m * len(floors) + c9) * NTs + b9]
+                    if got != want and got != -1:
+                        mism.append("%s c%d swell exc m%d floor %s h%.2f %d vs %d"
+                                    % (p[0], p[1], m, floors[c9], sw["thresholds"][b9], got, want))
+    rep.check(not mism, "%d cells' return values recomputed from the month files" % len(picks),
+              ("%d mismatches, e.g. %s" % (len(mism), "; ".join(mism[:8]))) if mism else "0 mismatches")
 
 
 def invariants(rep, args):
@@ -332,8 +471,7 @@ def invariants(rep, args):
     bad = []
     cells = 0
     for tid in mf["tiles"]:
-        with open(os.path.join(args.data, tid + ".json")) as fh:
-            t = json.load(fh)
+        t = load_tile(args.data, tid)
         for c in range(len(t["lat"])):
             cells += 1
             exc = t["exc"][c]
@@ -365,6 +503,50 @@ def invariants(rep, args):
                 bad.append("%s c%d pw negative" % (tid, c))
             if "tp" in t and any(v > 300 for v in t["tp"][c]):
                 bad.append("%s c%d tp out of range" % (tid, c))
+            if t.get("rv") and t["rv"][c]:
+                rvc = dict(zip(mf["rv"]["fields"], t["rv"][c]))
+                yl = mf["rv"]["years_n"] if t["lat"][c] >= -1e-6 else mf["rv"]["years_s"]
+                if len(t["rv"][c]) != len(mf["rv"]["fields"]) or len(t["ram"][c]) != len(yl):
+                    bad.append("%s c%d rv / ram length" % (tid, c))
+                elif rvc["hs100"] >= 0 and not (0 <= rvc["hs10"] <= rvc["hs50"] <= rvc["hs100"] <= 400):
+                    bad.append("%s c%d return values out of order or range" % (tid, c))
+                elif rvc["hs100"] >= 0 and rvc["n"] < mf["rv"]["min_years"]:
+                    bad.append("%s c%d return value from %d years" % (tid, c, rvc["n"]))
+                if t.get("ramd") and t["ramd"][c]:
+                    if any(v != -1 and not (1 <= v // 100 <= 12 and 1 <= v % 100 <= 31) for v in t["ramd"][c]):
+                        bad.append("%s c%d date out of range" % (tid, c))
+                if t.get("srv") and t["srv"][c]:
+                    NF9 = len(mf["rv"]["srv_fields"])
+                    for s9 in range(len(mf["rv"]["seasons"])):
+                        sr9 = dict(zip(mf["rv"]["srv_fields"], t["srv"][c][s9 * NF9:(s9 + 1) * NF9]))
+                        if sr9["hs100"] >= 0 and not (0 <= sr9["hs10"] <= sr9["hs50"] <= sr9["hs100"] <= 400):
+                            bad.append("%s c%d season %d return values out of order" % (tid, c, s9))
+                if t.get("sx") and t["sx"][c]:
+                    NF9 = len(mf["swell"]["period_floors"])
+                    NT9 = len(mf["swell"]["thresholds"])
+                    sx9 = t["sx"][c]
+                    for m in range(12):
+                        rows9 = [sx9[(m * NF9 + f) * NT9:(m * NF9 + f + 1) * NT9] for f in range(NF9)]
+                        if rows9[0][0] < 0:
+                            continue
+                        for f, row9 in enumerate(rows9):
+                            if any(row9[k] < row9[k + 1] for k in range(NT9 - 1)) or row9[0] > 1000:
+                                bad.append("%s c%d m%d swell exceedance not monotone" % (tid, c, m))
+                            if f and any(row9[k] > rows9[f - 1][k] for k in range(NT9)):
+                                bad.append("%s c%d m%d longer-period swell more often than all swell" % (tid, c, m))
+                    srs = t["sr"][c]
+                    for m in range(12):
+                        row9 = srs[m * 12:(m + 1) * 12]
+                        if row9[0] >= 0 and not (92 <= sum(row9) <= 108):
+                            bad.append("%s c%d m%d swell rose sum %d" % (tid, c, m, sum(row9)))
+                tzc = t["tz"][c]
+                if len(tzc) != 12 or any(v != -1 and not (10 <= v <= 160) for v in tzc):
+                    bad.append("%s c%d tz out of range" % (tid, c))
+                NB9 = mf["tz_hist"]["nb"]
+                for m in range(12):
+                    row9 = t["zh"][c][m * NB9:(m + 1) * NB9]
+                    if row9 and row9[0] >= 0 and not (990 <= sum(row9) <= 1010):
+                        bad.append("%s c%d m%d tz histogram sum %d" % (tid, c, m, sum(row9)))
             if "pn" in t and t["pn"][c]:
                 # ENSO: phases partition the samples; phase exceedance rows
                 # obey the same bounds and monotonicity as the headline exc
@@ -403,6 +585,8 @@ def main():
                     help="which pipeline produced the checkpoint")
     ap.add_argument("--era5-workdir",
                     help="waverys only: the ERA5 checkpoint whose wind was grafted at emit")
+    ap.add_argument("--extremes-workdir",
+                    help="waverys only: the extremes_waverys.py workdir used at emit")
     ap.add_argument("--skip-reemit", action="store_true",
                     help="leave out layer 3 (it needs the whole checkpoint in memory)")
     ap.add_argument("--low-memory", action="store_true",
@@ -430,6 +614,8 @@ def main():
     coverage(rep, acc, allow_partial=args.allow_partial)
     re_emit_compare(rep, args, acc)
     spot_recompute(rep, args, acc)
+    if getattr(args, "extremes_workdir", None):
+        extremes_recompute(rep, args)
     invariants(rep, args)
     rep.add("")
     rep.add("## Result")

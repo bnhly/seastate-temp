@@ -440,6 +440,93 @@ def consistency(tile, tid, c, mf, d, tally, max_n):
                   "%s p99All %.1f all-year exc %s" % (where, p, [None if x is None else round(x, 2) for x in comb]))
 
 
+def consistency_rv(tile, tid, c, mf, tally):
+    """Return values and Tz (6 Nov 26), when the tiles carry them."""
+    rvm = mf.get("rv")
+    if not rvm or not tile.get("rv") or not tile["rv"][c]:
+        return
+    where = "%s cell %d (%.2f, %.2f)" % (tid, c, tile["lat"][c], tile["lon"][c])
+    r = dict(zip(rvm["fields"], tile["rv"][c]))
+    ram = [v / 10.0 for v in tile["ram"][c] if v >= 0]
+    if r["hs100"] >= 0:
+        h10, h50, h100 = r["hs10"] / 10.0, r["hs50"] / 10.0, r["hs100"] / 10.0
+        tally.add("10, 50, 100-year heights in order", 0 <= h10 <= h50 <= h100, where)
+        # the page draws the annual maxima and their fitted line from ram;
+        # the stored values must be that same fit (Gumbel by moments)
+        n = len(ram)
+        ok = n == r["n"]
+        if ok and n > 1:
+            mu = sum(ram) / n
+            sd = math.sqrt(sum((x - mu) ** 2 for x in ram) / (n - 1))
+            A = sd * math.sqrt(6.0) / math.pi
+            U = mu - 0.5772156649 * A
+            for T, h in ((10, h10), (50, h50), (100, h100)):
+                if abs(U - A * math.log(-math.log(1.0 - 1.0 / T)) - h) > 0.15:
+                    ok = False
+        tally.add("return values are the Gumbel fit of the annual maxima shown", ok,
+                  "%s n %d / %d hs100 %.1f" % (where, n, r["n"], h100))
+        srt = sorted(ram)
+        med = srt[n // 2] if n % 2 else 0.5 * (srt[n // 2 - 1] + srt[n // 2])
+        tally.add("10-year height above the typical year's biggest sea", h10 >= med - 0.1,
+                  "%s hs10 %.1f median annual max %.1f" % (where, h10, med))
+        tally.add("90% range around each value is not negative and widens with T",
+                  0 <= r["se10"] <= r["se50"] <= r["se100"], where)
+        if r["tz50"] >= 0 and r["tp50"] >= 0:
+            tally.add("Tz below Tp in the annual-maximum sea states", r["tz50"] <= r["tp50"] + 5,
+                      "%s tz50 %.1f tp50 %.1f" % (where, r["tz50"] / 10.0, r["tp50"] / 10.0))
+        if r["alt100"] >= 0:
+            tally.add("INFO 100-year by Weibull on all sea states within 15% of the Gumbel value",
+                      abs(r["alt100"] - r["hs100"]) <= 0.15 * r["hs100"],
+                      "%s gumbel %.1f weibull %.1f" % (where, h100, r["alt100"] / 10.0))
+    if r["hs1"] >= 0 and tile.get("hxa") and tile["hxa"][c][1] >= 0:
+        tally.add("1-year height not below the all-year 1-in-1000 sea state",
+                  r["hs1"] >= tile["hxa"][c][1] - 3,
+                  "%s hs1 %.1f p999 %.1f" % (where, r["hs1"] / 10.0, tile["hxa"][c][1] / 10.0))
+    if r.get("sw50", -1) >= 0 and ram:
+        tally.add("swell in the biggest sea states not above those sea states",
+                  r["sw50"] / 10.0 <= max(ram) + 0.05, "%s sw50 %.1f" % (where, r["sw50"] / 10.0))
+    swm = mf.get("swell")
+    if swm and tile.get("sx") and tile["sx"][c]:
+        NF, NTs = len(swm["period_floors"]), len(swm["thresholds"])
+        thr = mf["thresholds"]
+        for m in range(12):
+            rows = [tile["sx"][c][(m * NF + f) * NTs:(m * NF + f + 1) * NTs] for f in range(NF)]
+            if rows[0][0] < 0:
+                continue
+            # swell is one part of the sea (Hs^2 = wind sea^2 + swell^2 + ...),
+            # so swell over a height cannot be more frequent than the sea over it
+            ok = True
+            exc = tile["exc"][c][m * len(thr):(m + 1) * len(thr)]
+            for k, h in enumerate(swm["thresholds"]):
+                for x, t9 in enumerate(thr):
+                    if abs(t9 - h) < 1e-9 and exc[x] >= 0 and rows[0][k] > exc[x] + 2:
+                        ok = False
+            tally.add("swell over a height no more often than the sea over it", ok,
+                      "%s month %d swell %s sea %s" % (where, m + 1, rows[0][:8], exc[:8]))
+            tally.add("longer-period swell no more often than all swell",
+                      all(rows[f][k] <= rows[f - 1][k] for f in range(1, NF) for k in range(NTs)),
+                      "%s month %d" % (where, m + 1))
+            msw, mww = tile["sm"][c][2 * m], tile["sm"][c][2 * m + 1]
+            mean = tile["mean"][c][m]
+            if mean >= 0 and msw >= 0:
+                tally.add("mean swell and mean wind sea not above the mean sea",
+                          msw <= mean + 1 and (mww < 0 or mww <= mean + 1),
+                          "%s month %d swell %.1f wind sea %.1f sea %.1f" % (where, m + 1, msw / 10.0, mww / 10.0, mean / 10.0))
+    meta = mf.get("tz_hist")
+    if meta and tile.get("zh") and tile["zh"][c]:
+        NB = meta["nb"]
+        for m in range(12):
+            row = tile["zh"][c][m * NB:(m + 1) * NB]
+            if row[0] < 0:
+                continue
+            tally.add("Tz histogram adds to 100%", 985 <= sum(row) <= 1015, "%s month %d" % (where, m + 1))
+            tz = tile["tz"][c][m]
+            tp = tile["tp"][c][m]
+            if tz >= 0 and tp >= 0:
+                tally.add("typical Tz below typical Tp", tz <= tp + 5,
+                          "%s month %d tz %.1f tp %.1f" % (where, m + 1, tz / 10.0, tp / 10.0))
+
+
 # ------------------------------------------------------------- truth (C)
 
 def truth_layer(args, mf, rep, summary):
@@ -621,9 +708,21 @@ def main():
     for tid in tids:
         with open(os.path.join(args.data, tid + ".json")) as fh:
             tile = json.load(fh)
+        xp = os.path.join(args.data, "x" + tid[1:] + ".json")
+        if os.path.exists(xp):
+            with open(xp) as fh:
+                xt = json.load(fh)
+            tally.add("extremes sidecar holds the same cells as its tile",
+                      xt["lat"] == tile["lat"] and xt["lon"] == tile["lon"], tid)
+            for k, v in xt.items():
+                if k not in ("format", "lat", "lon"):
+                    tile[k] = v
+        elif mf.get("rv"):
+            tally.add("extremes sidecar holds the same cells as its tile", False, tid + " has no sidecar")
         for c in range(len(tile["lat"])):
             d = decode(tile, c, mf)
             consistency(tile, tid, c, mf, d, tally, max_n)
+            consistency_rv(tile, tid, c, mf, tally)
             cells += 1
             if args.dump_browser and (cells % 37 == 0):
                 dump["%s|%d" % (tid, c)] = browser_values(d, mf)

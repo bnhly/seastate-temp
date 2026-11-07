@@ -550,30 +550,45 @@ class Extremes(object):
         del mx, tpm, tzm, extra
         return am, fit, ex["date"], seas
 
-    def swell_band(self, r0, r1, valid_b):
-        """Per month: swell exceedance permille [12, rows, cols, SW_NC, SW_NB]
+    def swell_band(self, r0, r1, valid_b, nthr=SW_NB):
+        """Per month: swell exceedance permille [12, rows, cols, SW_NC, nthr]
         where index c is "period at least SW_TCLS[c - 1]" (c = 0: any period)
         and bin b is "swell Hs at least (b + 1) * SW_BIN"; mean swell and wind
-        sea Hs x10; the swell rose in percent."""
-        h = self.h["sw_hist"][:, r0:r1].astype(np.int32)          # [12, rows, cols, C, B]
-        tot = h.sum(axis=(-1, -2), dtype=np.int64)
-        # period floor: classes c and above; height: bins above b
-        fl = np.cumsum(h[..., ::-1, :], axis=-2, dtype=np.int32)[..., ::-1, :]
-        ex = np.cumsum(fl[..., ::-1], axis=-1, dtype=np.int32)[..., ::-1]
-        ex = np.concatenate([ex[..., 1:], np.zeros(ex.shape[:-1] + (1,), np.int32)], axis=-1)
-        ok = valid_b & (tot > 0)
-        pml = np.floor(1000.0 * ex / np.maximum(tot, 1)[..., None, None] + 0.5).astype(np.int16)
-        pml[~ok] = -1
-        with np.errstate(divide="ignore", invalid="ignore"):
-            msw = np.floor(10.0 * self.h["sw_sum"][:, r0:r1] / tot + 0.5)
-            wn = self.h["ww_n"][:, r0:r1].astype(np.float64)
-            mww = np.floor(10.0 * self.h["ww_sum"][:, r0:r1] / wn + 0.5)
-        msw = np.where(ok, msw, -1).astype(np.int32)
-        mww = np.where(ok & (wn > 0), mww, -1).astype(np.int32)
-        rs = self.h["sw_rose"][:, r0:r1].astype(np.int32)
-        rt = rs.sum(axis=-1, dtype=np.int64)
-        rose = np.floor(100.0 * rs / np.maximum(rt, 1)[..., None] + 0.5).astype(np.int16)
-        rose[~(ok & (rt > 0))] = -1
+        sea Hs x10; the swell rose in percent. One month at a time: the whole
+        band at once ran to gigabytes of temporaries."""
+        shp = self.h["sw_hist"][0, r0:r1].shape[:2]
+        pml = np.full((12,) + shp + (SW_NC, nthr), -1, np.int16)
+        msw = np.full((12,) + shp, -1, np.int32)
+        mww = np.full((12,) + shp, -1, np.int32)
+        rose = np.full((12,) + shp + (SW_SECT,), -1, np.int16)
+        for m in range(12):
+            h = np.asarray(self.h["sw_hist"][m, r0:r1], dtype=np.int32)     # [rows, cols, C, B]
+            tot = h.sum(axis=(-1, -2), dtype=np.int64)
+            ok = valid_b[m] & (tot > 0)
+            # period floor: classes c and above; height: bins above b
+            fl = np.cumsum(h[..., ::-1, :], axis=-2, dtype=np.int32)[..., ::-1, :]
+            del h
+            ex = np.cumsum(fl[..., ::-1], axis=-1, dtype=np.int32)[..., ::-1][..., 1:nthr + 1]
+            del fl
+            if ex.shape[-1] < nthr:
+                ex = np.concatenate([ex, np.zeros(ex.shape[:-1] + (nthr - ex.shape[-1],), np.int32)], axis=-1)
+            pm = np.floor(ex * (1000.0 / np.maximum(tot, 1))[..., None, None].astype(np.float32) + 0.5)
+            del ex
+            pm = pm.astype(np.int16)
+            pm[~ok] = -1
+            pml[m] = pm
+            del pm
+            with np.errstate(divide="ignore", invalid="ignore"):
+                a9 = np.floor(10.0 * np.asarray(self.h["sw_sum"][m, r0:r1], np.float64) / tot + 0.5)
+                wn = np.asarray(self.h["ww_n"][m, r0:r1], np.float64)
+                b9 = np.floor(10.0 * np.asarray(self.h["ww_sum"][m, r0:r1], np.float64) / wn + 0.5)
+            msw[m] = np.where(ok, a9, -1)
+            mww[m] = np.where(ok & (wn > 0), b9, -1)
+            rs = np.asarray(self.h["sw_rose"][m, r0:r1], dtype=np.int32)
+            rt = rs.sum(axis=-1, dtype=np.int64)
+            ro = np.floor(100.0 * rs / np.maximum(rt, 1)[..., None] + 0.5).astype(np.int16)
+            ro[~(ok & (rt > 0))] = -1
+            rose[m] = ro
         return pml, msw, mww, rose
 
     def tz_band(self, r0, r1, valid_b):

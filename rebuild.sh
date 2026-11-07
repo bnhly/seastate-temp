@@ -27,6 +27,9 @@
 #   - the all-year 1-in-100 pooled over the months the page shows (sea ice)
 #   - a data id the page puts on its tile requests, so no browser mixes
 #     cached old tiles with new ones
+#   - (6 Nov 26) when extremes-data.sh has unpacked the extremes pass into
+#     wav_work/ex: 1, 10, 50 and 100-year Hs, each year's biggest sea state,
+#     and the zero-crossing period Tz. Without it the tiles carry none.
 
 set -u
 BASE=${TM_RB_BASE:-/root/seastate}
@@ -86,13 +89,21 @@ if [ "${swap_kb:-0}" -lt 1000000 ] && [ -z "${TM_RB_NOSWAP:-}" ]; then
 fi
 
 # ---- the new emitter and the checkers (the host's own emitter is left alone)
-for f in build_dataset_waverys.py build_dataset_era5.py check_maths.py verify_dataset.py; do
+for f in build_dataset_waverys.py build_dataset_era5.py extremes_waverys.py check_maths.py verify_dataset.py; do
   curl -fsSL -o "$OUT/$f.new" "$RAW/$f" || { echo "FAILED to fetch $f from the kit"; exit 1; }
   mv "$OUT/$f.new" "$OUT/$f"
 done
 grep -q "WIND_Q" "$OUT/build_dataset_waverys.py" || { echo "the kit's emitter is not the new one; tell Claude"; exit 1; }
 
-rm -f "$OUT/summary.txt" "$OUT/progress" "$OUT/run.log"
+EXARG=""
+if [ -f "$BASE/wav_work/ex/tz_hist.npz" ] && [ -d "$BASE/wav_work/ex/months" ]; then
+  EXARG="--extremes-workdir wav_work/ex"
+  echo "extremes: found, the new tiles will carry return values and Tz"
+else
+  echo "extremes: not here, the new tiles will carry no return values (run extremes-data.sh first to add them)"
+fi
+
+rm -f "$OUT/summary.txt" "$OUT/progress" "$OUT/run.log" "$OUT/verification_report.md" "$OUT/verify.txt" "$OUT/maths.out"
 date -u '+%Y-%m-%d %H:%M UTC' > "$OUT/started"
 
 cat > "$OUT/run.sh" <<EOF
@@ -114,27 +125,39 @@ finish() {
 }
 
 say "1/4 building the new tiles into data_new (the site keeps serving the old ones; about an hour)"
+if [ -n "$EXARG" ]; then
+  "$PY" "$OUT/extremes_waverys.py" --prepare --workdir wav_work/ex >> "$OUT/run.log" 2>&1 \\
+    || finish "NOT SWAPPED: could not unpack the extremes (see $OUT/run.log). The live tiles are unchanged."
+fi
 rm -rf "$WEB/data_new"
 if [ -n "${TM_RB_EMIT_FROM:-}" ]; then
   cp -a "${TM_RB_EMIT_FROM:-}" "$WEB/data_new"      # testing the script only: tiles built earlier
 else
-"$PY" "$OUT/build_dataset_waverys.py" --emit --workdir wav_work --era5-workdir wav_work \\
+"$PY" "$OUT/build_dataset_waverys.py" --emit --workdir wav_work --era5-workdir wav_work $EXARG \\
     --out "$WEB/data_new" >> "$OUT/run.log" 2>&1 || finish "NOT SWAPPED: the build stopped (see $OUT/run.log). The live tiles are unchanged."
 fi
-"$PY" - "$WEB/data/manifest.json" "$WEB/data_new/manifest.json" >> "$OUT/run.log" 2>&1 <<'PYEOF' || finish "NOT SWAPPED: the new tiles do not look complete (see $OUT/run.log). The live tiles are unchanged."
+"$PY" - "$WEB/data/manifest.json" "$WEB/data_new/manifest.json" "$EXARG" >> "$OUT/run.log" 2>&1 <<'PYEOF' || finish "NOT SWAPPED: the new tiles do not look complete (see $OUT/run.log). The live tiles are unchanged."
 import json, sys
 old, new = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
 assert new.get("data_id"), "no data_id"
 assert new.get("wind") is True and new.get("wind_q"), "wind graft missing"
 assert len(new["thresholds"]) == 28, "thresholds"
 assert len(new["tiles"]) == len(old["tiles"]), "tile count %d vs %d" % (len(new["tiles"]), len(old["tiles"]))
+if sys.argv[3]:
+    rv = new.get("rv") or {}
+    assert rv.get("years_n") and len(rv["years_n"]) >= 20, "return values missing or under 20 years"
+    assert new.get("tz_hist"), "Tz missing"
+    assert new.get("swell") and rv.get("seasons"), "swell or seasons missing"
 print("new manifest ok:", new["data_id"], len(new["tiles"]), "tiles")
 PYEOF
 
 say "2/4 recomputing sampled cells from the checkpoint"
-"$PY" "$OUT/verify_dataset.py" --builder waverys --workdir wav_work --era5-workdir wav_work --low-memory --skip-reemit \\
+"$PY" "$OUT/verify_dataset.py" --builder waverys --workdir wav_work --era5-workdir wav_work $EXARG --low-memory --skip-reemit \\
     --data "$WEB/data_new" --report "$OUT/verification_report.md" --sample 400 >> "$OUT/run.log" 2>&1
 grep -E '^\- \*\*(PASS|FAIL)' "$OUT/verification_report.md" 2>/dev/null | sed 's/^- \*\*\(PASS\|FAIL\)\*\* /\1  /' | cut -c1-110 > "$OUT/verify.txt"
+if ! grep -q '^## Result' "$OUT/verification_report.md" 2>/dev/null; then
+  finish "NOT SWAPPED: the recompute did not finish (see $OUT/run.log). The live tiles are unchanged."
+fi
 if grep -q '^FAIL' "$OUT/verify.txt" && ! grep -q '^FAIL  at least one cell reaches full theoretical coverage' "$OUT/verify.txt"; then
   finish "NOT SWAPPED: the recompute from the checkpoint found a difference. The live tiles are unchanged."
 fi

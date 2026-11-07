@@ -459,6 +459,23 @@ RV_METHOD = ("Annual maxima of 3-hourly Hs, years summer to summer (DNV-RP-C205 
              "maxima. Statistical estimates, not design values.")
 
 
+# the extremes fields go in a sidecar tile (x_<lat>_<lon>.json, same cells in
+# the same order) fetched only when the page opens them: in the main tile they
+# would add about 40% to every place lookup
+X_FIELDS = ("rv", "ram", "ramd", "srv", "tz", "zh", "sx", "sm", "sr")
+
+
+def write_tile(out, tid, t, with_x):
+    main = {k: v for k, v in t.items() if k not in X_FIELDS}
+    with open(os.path.join(out, tid + ".json"), "w") as fh:
+        json.dump(main, fh, separators=(",", ":"))
+    if with_x:
+        side = {"format": 1, "lat": t["lat"], "lon": t["lon"]}
+        side.update((k, t[k]) for k in X_FIELDS)
+        with open(os.path.join(out, "x" + tid[1:] + ".json"), "w") as fh:
+            json.dump(side, fh, separators=(",", ":"))
+
+
 def run_emit(args, acc=None):
     if acc is None:
         acc = load_accumulator(args.workdir)
@@ -601,7 +618,7 @@ def run_emit(args, acc=None):
         if ex is not None:
             north = LAT0 + r0 * RES >= -1e-6
             am_b, fit_b, amd_b, seas_b = ex.band(r0, r1, north)
-            sx_b, msw_b, mww_b, sr_b = ex.swell_band(r0, r1, valid_b)
+            sx_b, msw_b, mww_b, sr_b = ex.swell_band(r0, r1, valid_b, SW_THR_N)
             hs1_b, alt_b = X.hs_from_histogram(hs_all, tot_all, HS_BIN)
             tz_ds_b, tz_pml_b = ex.tz_band(r0, r1, valid_b)
         del hs_all, cum_all
@@ -662,8 +679,7 @@ def run_emit(args, acc=None):
                 cur_trow = ti_
             elif ti_ != cur_trow:
                 for tid9 in tiles:
-                    with open(os.path.join(args.out, tid9 + ".json"), "w") as fh:
-                        json.dump(tiles[tid9], fh, separators=(",", ":"))
+                    write_tile(args.out, tid9, tiles[tid9], ex is not None)
                     tile_ids.append(tid9)
                 tiles.clear()
                 cur_trow = ti_
@@ -803,8 +819,7 @@ def run_emit(args, acc=None):
             t["exc"].append(flat)
 
         for tid, t in tiles.items():
-            with open(os.path.join(args.out, tid + ".json"), "w") as fh:
-                json.dump(t, fh, separators=(",", ":"))
+            write_tile(args.out, tid, t, ex is not None)
             tile_ids.append(tid)
         tiles = None
 
@@ -868,6 +883,7 @@ def run_emit(args, acc=None):
                 "date": "ramd = month * 100 + day of each annual maximum (-1 none); north of "
                         "the equator a month before July is in the year after the label",
                 "seasons": [nm for nm, _ in X.SEASONS], "srv_fields": SRV_FIELDS,
+                "sidecar": "x_<lat>_<lon>.json beside each t_ tile: rv, ram, ramd, srv, tz, zh, sx, sm, sr",
                 "method": RV_METHOD}
                if ex is not None else False),
         # primary swell (VHM0_SW1) and wind sea (VHM0_WW): sx per cell is
@@ -1018,6 +1034,11 @@ def run_synthetic(args):
     assert mf["grid"]["res"] == RES and mf["tile_deg"] == TILE_DEG
     with open(os.path.join(args.out, "t_10_-130.json")) as fh:
         pt = json.load(fh)
+    assert "rv" not in pt and "sx" not in pt, "extremes fields belong in the sidecar"
+    with open(os.path.join(args.out, "x_10_-130.json")) as fh:
+        px9 = json.load(fh)
+    assert px9["lat"] == pt["lat"] and px9["lon"] == pt["lon"]
+    pt.update((k, px9[k]) for k in X_FIELDS)
     pk = None
     for c in range(len(pt["lat"])):
         if abs(pt["lat"][c] - 10.0) < 1e-6 and abs(pt["lon"][c] - (-130.0)) < 1e-6:
@@ -1104,7 +1125,7 @@ def run_synthetic(args):
     assert pt["sm"][pk] == [14, 8] * 12, pt["sm"][pk]
     assert len(pt["sr"][pk]) == 144 and pt["sr"][pk][7] == 100
     # a southern cell (no extremes data): zero maxima, 21 years
-    with open(os.path.join(args.out, "t_-50_-30.json")) as fh:
+    with open(os.path.join(args.out, "x_-50_-30.json")) as fh:
         ts9 = json.load(fh)
     assert len(ts9["ram"][0]) == 21 and ts9["rv"][0][0] == 21, ts9["rv"][0]
 

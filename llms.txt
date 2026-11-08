@@ -7,6 +7,7 @@
 ## What it answers
 
 - How often significant wave height exceeds a given level at a location, by calendar month and across the year
+- 1, 10, 50 and 100-year significant wave height with the biggest storm on record, seasonal 100-year values, swell and wind sea, zero-crossing period
 - Mean wave height by month, typical peak period and direction, wind speed (mean and top decile), extreme sea states, weather windows (separate working periods per month below a wave height limit), water depth, nearby oil and gas assets, tropical cyclone exposure
 - A one page PDF summary and a shareable link for every result
 
@@ -18,8 +19,10 @@
 
 ## Pages
 
-- [Locations index](https://seastate.thrustm.com/locations/index.html): 87 named offshore working areas, each with a monthly table, the headline numbers in words and the data basis
+- [Locations index](https://seastate.thrustm.com/locations/index.html): 224 named offshore working areas, each with a monthly table, the headline numbers in words and the data basis
 - [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
+- Region pages under https://seastate.thrustm.com/regions/: each region's locations compared, with the 100-year significant wave height
+- Guides: [significant wave height](https://seastate.thrustm.com/learn/significant-wave-height.html), [100-year wave](https://seastate.thrustm.com/learn/100-year-wave.html), [Tp and Tz](https://seastate.thrustm.com/learn/wave-period-tp-tz.html), [weather windows](https://seastate.thrustm.com/learn/weather-windows.html)
 - [Explorer](https://seastate.thrustm.com/): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result
 
 ## Not for scraping

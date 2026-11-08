@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What is a 100-year wave height?</title>
+<meta name="description" content="What a 100-year wave height means, the chance it is exceeded during a project, and how return values are worked out from yearly maxima.">
+<link rel="canonical" href="https://seastate.thrustm.com/learn/100-year-wave.html">
+<meta name="theme-color" content="#14304a">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Thrust Maritime">
+<meta property="og:title" content="What is a 100-year wave height?">
+<meta property="og:description" content="What a 100-year wave height means, the chance it is exceeded during a project, and how return values are worked out from yearly maxima.">
+<meta property="og:url" content="https://seastate.thrustm.com/learn/100-year-wave.html">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root { --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#6b6964;
+  --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,0.10); --accent:#1f66b8; --accent-deep:#14304a; }
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; background:var(--page); color:var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size:15px; line-height:1.45; }
+.tm-page { max-width: 900px; margin: 0 auto; padding: 18px 20px 40px; }
+.tm-header { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding: 4px 2px 10px; }
+.tm-brand-name { font-weight:700; letter-spacing:0.14em; color:var(--accent-deep); font-size:15px; text-decoration:none; }
+.tm-brand-sep { width:1px; height:14px; background:var(--baseline); align-self:center; }
+.tm-brand-tool { font-weight:600; font-size:19px; margin:0; }
+.tm-brand-tool a { color:var(--ink); text-decoration:none; }
+.tm-crumbs { font-size:12.5px; color:var(--muted); margin: 4px 0 14px; }
+.tm-crumbs a { color:var(--muted); }
+h1 { font-size: 26px; line-height:1.2; margin: 0 0 12px; }
+h2 { font-size: 17px; margin: 22px 0 8px; }
+p { max-width: 720px; }
+.tm-lead { font-size: 16.5px; }
+.tm-open { display:inline-block; margin: 6px 0 4px; padding: 10px 16px; background:var(--accent-deep);
+  color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+.tm-open:hover { background:#1c4266; }
+.tm-basis { color:var(--ink-2); font-size:13.5px; }
+.tm-table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:6px 12px; overflow-x:auto; margin: 8px 0 4px; }
+table { width:100%; border-collapse:separate; border-spacing:0; font-size:13.5px; }
+th { text-align:right; color:var(--ink-2); font-weight:600; padding:7px 10px; border-bottom:1px solid var(--grid); }
+th:first-child, td:first-child { text-align:left; }
+td { text-align:right; padding:5px 10px; border-bottom:1px solid var(--grid); font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom:none; }
+tr.tm-year td { background:#eef4fc; font-weight:600; }
+.tm-cta { margin-top:26px; padding:18px; background:var(--accent-deep); color:#e8eef4; border-radius:10px; }
+.tm-cta h2 { margin:0 0 6px; font-size:17px; color:#fff; }
+.tm-cta p { margin:4px 0; max-width:720px; }
+.tm-cta a { color:#9ec5f4; font-weight:600; }
+.tm-cta a.tm-li, .cta a.tm-li { display:inline-flex; align-items:center; gap:7px; margin-top:6px; padding:5px 13px; border:1px solid rgba(255,255,255,.5); border-radius:999px; color:#fff; text-decoration:none; font-weight:600; }
+.tm-cta a.tm-li:hover, .cta a.tm-li:hover { background:rgba(255,255,255,.12); }
+.tm-li svg { width:15px; height:15px; fill:currentColor; flex:none; }
+.tm-cite { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px;
+  font-size:13.5px; word-break: break-word; }
+.tm-footer { margin-top:18px; color:var(--muted); font-size:12px; }
+.tm-footer p { margin:6px 0; max-width:900px; }
+.tm-region { margin: 18px 0 4px; }
+.tm-loclist { list-style:none; padding:0; margin:0 0 6px; }
+.tm-loclist li { padding: 4px 0; border-bottom: 1px solid var(--grid); display:flex; justify-content:space-between; gap:12px; max-width:720px; }
+.tm-loclist .tm-pct { color:var(--ink-2); font-variant-numeric: tabular-nums; white-space:nowrap; }
+a { color: var(--accent); }
+</style>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Article",
+ "headline": "What is a 100-year wave height?",
+ "description": "What a 100-year wave height means, the chance it is exceeded during a project, and how return values are worked out from yearly maxima.",
+ "url": "https://seastate.thrustm.com/learn/100-year-wave.html",
+ "dateModified": "2026-11-08",
+ "author": {
+  "@type": "Organization",
+  "name": "Thrust Maritime",
+  "url": "https://www.thrustm.com"
+ },
+ "publisher": {
+  "@type": "Organization",
+  "name": "Thrust Maritime",
+  "url": "https://www.thrustm.com"
+ }
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "BreadcrumbList",
+ "itemListElement": [
+  {
+   "@type": "ListItem",
+   "position": 1,
+   "name": "Sea State Explorer",
+   "item": "https://seastate.thrustm.com/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 2,
+   "name": "What is a 100-year wave height?",
+   "item": "https://seastate.thrustm.com/learn/100-year-wave.html"
+  }
+ ]
+}
+</script>
+</head>
+<body>
+<div class="tm-page">
+<header class="tm-header">
+<a class="tm-brand-name" href="https://www.thrustm.com/?utm_source=seastate&amp;utm_medium=referral&amp;utm_campaign=sea_state_explorer&amp;utm_content=learn_logo" target="_blank" rel="noopener">THRUST MARITIME</a>
+<span class="tm-brand-sep"></span>
+<p class="tm-brand-tool"><a href="../index.html">Sea State Explorer</a></p>
+</header>
+<nav class="tm-crumbs"><a href="../index.html">Sea State Explorer</a> &rsaquo; Guides</nav>
+<h1>What is a 100-year wave height?</h1>
+<p class="tm-lead">The 100-year significant wave height is the value exceeded on average once in 100 years: a 1% chance in any one year. It is not a wave that comes once a century on schedule.</p>
+<h2>The chance it happens during your project</h2>
+<p class="tm-basis">Over a 25 year design life the chance of meeting the 100-year sea state at least once is about 22% (1 minus 0.99 to the power 25). Over 100 years it is about 63%. Over a 3 month campaign it is well under 1%, which is why short operations use seasonal statistics instead.</p>
+<h2>How we work it out</h2>
+<p class="tm-basis">We take the biggest 3 hourly H<sub>s</sub> in each year of the hindcast and fit a Gumbel distribution by the method of moments, following DNV-RP-C205 (3.6.2.4 and 3.7.1.3). Years run summer to summer so each storm season sits in one year (3.6.2.5), and at least 20 complete years are needed. The 90% range shows the sampling uncertainty of the fit. As a check we also fit a Weibull distribution to every sea state and say so where the two disagree by more than 15%. At <a href="../locations/thylacine-otway.html">Thylacine (Otway)</a> the 100-year significant wave height is about 10.5 m (90% range 9.7 to 11.3 m), the 10-year about 9.0 m, and the biggest sea state in the record was 9.9 m on 6 November 1994.</p>
+<h2>Where it falls short</h2>
+<p class="tm-basis">A hindcast smooths out the sharp peak of a tropical cyclone and of the most intense storms, so in those areas these values tend to be low. They are statistics for planning and tendering. Design needs the project's own metocean criteria, prepared and checked by a specialist.</p>
+<p class="tm-basis">Try it for any point at sea in the <a href="../index.html">explorer</a>, or browse the <a href="../locations/index.html">location pages</a>. Other guides: <a href="significant-wave-height.html">What is significant wave height (Hs)?</a> &middot; <a href="wave-period-tp-tz.html">Wave period: peak period Tp and zero-crossing period Tz</a> &middot; <a href="weather-windows.html">Weather windows for offshore work</a>. How the numbers are made: <a href="../methodology.html">How it works</a>.</p>
+<section class="tm-cta">
+<h2>Planning a subsea lift?</h2>
+      <p>Weather windows decide when a lift can go. Thrust Maritime provides specialist lifting
+      solutions for subsea operations.</p>
+      <p><a id="tm-cta-link" href="https://www.thrustm.com/?utm_source=seastate&amp;utm_medium=referral&amp;utm_campaign=sea_state_explorer&amp;utm_content=learn_cta" target="_blank" rel="noopener">Talk to us at thrustm.com</a></p>
+      <p><a class="tm-li" href="https://www.linkedin.com/company/thrust-maritime-pty-ltd-/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>Follow us on LinkedIn</a></p>
+</section>
+<footer class="tm-footer">
+<p>These are long term climatological statistics and not a forecast. They are likely to underestimate extremes, especially close to coastlines, in sheltered or shallow water and in tropical cyclone conditions. The data is free for everyone to use, but it is not warranted by Thrust Maritime: use it at your own risk.</p>
+<p>Free to use for planning purposes. Automated bulk extraction of the tool&#x27;s data tiles is not permitted; the underlying open datasets are available from the original providers credited below and on the How it works page.</p>
+<p>Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave reanalysis [1980-2023], 3 hourly significant wave height, peak period and direction. Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid (wind, direction rose, diurnal cycle and ENSO split 1980-2024). Neither the European Commission nor ECMWF nor Mercator Ocean is responsible for any use of this information.</p>
+</footer>
+</div>
+<script src="../hit.js?v=23e5184922" defer></script>
+</body>
+</html>

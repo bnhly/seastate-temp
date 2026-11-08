@@ -183,6 +183,114 @@ LOCATIONS = [
 ]
 
 
+# Straits, passages and port approaches (8 Nov 26, Ben: "do 1, 2 and 3" of
+# the search plan). Positions are open water in the strait or just off the
+# approach, so the nearest cell is a sea cell; each page states its point.
+PASSAGES = [
+    ("Torres Strait", -10.40, 142.30, "Australia", "torres-strait"),
+    ("Central Bass Strait", -39.50, 146.00, "Bass Strait", "central-bass-strait"),
+    ("Great Australian Bight", -34.50, 130.00, "Australia", "great-australian-bight"),
+    ("Port Hedland approaches", -19.80, 118.60, "NW Shelf Australia", "port-hedland-approaches"),
+    ("Fremantle offshore", -32.05, 115.30, "Australia", "fremantle-offshore"),
+    ("Newcastle (NSW) offshore", -33.05, 152.10, "Australia", "newcastle-nsw-offshore"),
+    ("Port Phillip Heads offshore", -38.50, 144.55, "Bass Strait", "port-phillip-heads-offshore"),
+    ("Cook Strait", -41.30, 174.55, "New Zealand", "cook-strait"),
+    ("Strait of Hormuz", 26.50, 56.40, "Persian Gulf", "strait-of-hormuz"),
+    ("Strait of Malacca", 3.00, 100.70, "SE Asia", "strait-of-malacca"),
+    ("Singapore Strait", 1.20, 104.00, "SE Asia", "singapore-strait"),
+    ("Luzon Strait", 20.50, 121.00, "East Asia", "luzon-strait"),
+    ("Taiwan Strait", 24.50, 119.50, "East Asia", "taiwan-strait"),
+    ("Strait of Gibraltar", 35.95, -5.60, "Mediterranean", "strait-of-gibraltar"),
+    ("Dover Strait", 51.00, 1.45, "English Channel", "dover-strait"),
+    ("Western English Channel", 49.80, -4.50, "English Channel", "western-english-channel"),
+    ("Bay of Biscay", 45.50, -5.00, "Bay of Biscay", "bay-of-biscay"),
+    ("Bab-el-Mandeb", 12.60, 43.35, "Red Sea", "bab-el-mandeb"),
+    ("Mozambique Channel", -17.00, 41.50, "East Africa", "mozambique-channel"),
+    ("Off the Cape of Good Hope", -34.60, 18.20, "Southern Africa", "cape-of-good-hope"),
+    ("Drake Passage", -58.00, -65.00, "Southern Ocean", "drake-passage"),
+]
+
+# More named working areas, taken from the site's own field register
+# (assets.json, the Global Oil and Gas Extraction Tracker) rather than typed
+# in: operating offshore fields, one per box, away from the curated ones,
+# each given the region of the nearest curated location.
+AUTO_BOX_DEG = 1.5
+AUTO_MIN_KM = 75
+AUTO_REGION_KM = 500
+AUTO_PER_REGION = 10
+AUTO_MIN_DEPTH = 20
+
+
+def clean_field_name(n):
+    n = re.sub(r"\s+-\s+.*$", "", n)               # "Mad Dog - BP Oil and Gas Phase 2"
+    n = re.sub(r"\s*\b(\d+\s+)?Oil and Gas (Asset|Phase|Project)\b.*$", "", n)
+    n = re.sub(r"\s*\([^)]*\)", "", n)              # "(MC778)", "(Estado Nacional)"
+    return n.strip(" -")
+
+
+def slugify(n):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", n.lower().replace("&", " and ")).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+def auto_locations(assets, taken):
+    """Deterministic: same assets.json, same list."""
+    if not assets:
+        return []
+    base = LOCATIONS + PASSAGES
+    cand = []
+    for a in assets:
+        t = a.get("t") or ""
+        if not t.startswith("field") or (a.get("s") or "") not in ("operating", "in development"):
+            continue
+        if not a.get("d") or a["d"] < AUTO_MIN_DEPTH:
+            continue
+        nm = clean_field_name(a.get("n") or "")
+        if len(nm) < 3 or len(nm) > 32 or not re.search(r"[A-Za-z]{3}", nm):
+            continue
+        cand.append((-(a.get("d") or 0), nm, a))
+    cand.sort(key=lambda x: (x[0], x[1]))
+    boxes, out, per = set(), [], {}
+    slugs = set(taken)
+    for _, nm, a in cand:
+        la, lo = a["la"], a["lo"]
+        box = (int(math.floor(la / AUTO_BOX_DEG)), int(math.floor(lo / AUTO_BOX_DEG)))
+        if box in boxes:
+            continue
+        near = min(base + out, key=lambda l: haversine_km(la, lo, l[1], l[2]))
+        dk = haversine_km(la, lo, near[1], near[2])
+        if dk < AUTO_MIN_KM:
+            continue
+        reg = min(base, key=lambda l: haversine_km(la, lo, l[1], l[2]))
+        if haversine_km(la, lo, reg[1], reg[2]) <= AUTO_REGION_KM:
+            region = reg[3]
+        elif a.get("c"):
+            region = a["c"]                         # read as "off <country>"
+            the = region in ("United States", "Philippines", "Netherlands", "United Kingdom",
+                             "United Arab Emirates", "Russia") and region != "Russia"
+            REGION_PHRASE.setdefault(region, "off " + ("the " if the else "") + region)
+        else:
+            continue
+        if per.get(region, 0) >= AUTO_PER_REGION:
+            continue
+        slug = slugify(nm)
+        if not slug or slug in slugs:
+            slug = slugify(nm + " " + (a.get("c") or ""))
+        if not slug or slug in slugs:
+            continue
+        boxes.add(box)
+        slugs.add(slug)
+        per[region] = per.get(region, 0) + 1
+        out.append((nm, round(la, 2), round(lo, 2), region, slug))
+    return out
+
+
+def all_locations(store=None, assets=None):
+    base = LOCATIONS + PASSAGES
+    return base + auto_locations(assets, [l[4] for l in base])
+
+
 # How each region reads in prose ("lies in the North Sea", "lies off Brazil").
 # Regions missing here fall back to "in <region>".
 REGION_PHRASE = {
@@ -214,6 +322,10 @@ REGION_PHRASE = {
     "US Atlantic": "off the US Atlantic coast",
     "Caribbean": "in the Caribbean",
     "New Zealand": "off New Zealand",
+    "Australia": "off Australia",
+    "English Channel": "in the English Channel",
+    "Bay of Biscay": "in the Bay of Biscay",
+    "Southern Ocean": "in the Southern Ocean",
 }
 
 
@@ -275,6 +387,7 @@ class TileStore(object):
         if self.mf.get("format") != 1:
             raise SystemExit("unsupported manifest format %r" % self.mf.get("format"))
         self.tiles = {}
+        self.xtiles = {}
         self.thresholds = self.mf["thresholds"]
         self.snap_km = self.mf.get("max_snap_km", 350)
         self.persist = self.mf.get("persist") or {"thresholds": [1.0, 1.5, 2.0, 2.5, 3.0],
@@ -299,6 +412,77 @@ class TileStore(object):
             print("WARNING: tile %s listed in the manifest but unreadable: %s" % (tid, e))
             self.tiles[tid] = None
         return self.tiles[tid]
+
+    def extremes(self, best):
+        """The return values, swell and Tz for a cell, from its sidecar
+        x_ tile (data.js decodeExtremes). None on older data."""
+        rv = self.mf.get("rv")
+        if not rv:
+            return None
+        tid = None
+        for k, t in self.tiles.items():
+            if t is best["tile"]:
+                tid = k
+                break
+        if not tid:
+            return None
+        xid = "x" + tid[1:]
+        if xid not in self.xtiles:
+            path = os.path.join(self.data_dir, xid + ".json")
+            self.xtiles[xid] = json.load(io.open(path, encoding="utf-8")) if os.path.exists(path) else None
+        x = self.xtiles[xid]
+        idx = best["idx"]
+        if not x or idx >= len(x["lat"]) or abs(x["lat"][idx] - best["lat"]) > 1e-6 or not x["rv"][idx]:
+            return None
+        F = rv["fields"]
+        r = {}
+        for k, v in zip(F, x["rv"][idx]):
+            r[k] = v if k == "n" else (None if v < 0 else v / 10.0)
+        if r.get("hs100") is None or r["n"] < rv.get("min_years", 20):
+            return {"ok": False}
+        years = rv["years_n"] if best["lat"] >= -1e-6 else rv["years_s"]
+        big, big_k = None, None
+        for k, v in enumerate(x["ram"][idx]):
+            if v >= 0 and (big is None or v > big):
+                big, big_k = v, k
+        when = None
+        if big_k is not None and x.get("ramd"):
+            md = x["ramd"][idx][big_k]
+            if md > 0:
+                yr = years[big_k] + (1 if best["lat"] >= -1e-6 and md // 100 < 7 else 0)
+                when = "%d %s %d" % (md % 100, MONTH_NAMES[md // 100 - 1], yr)
+        seasons = []
+        SF = rv.get("srv_fields") or []
+        if x.get("srv") and SF:
+            sv = x["srv"][idx]
+            for k, nm in enumerate(rv["seasons"]):
+                v = sv[k * len(SF) + SF.index("hs100")]
+                v = None if v < 0 else min(v / 10.0, r["hs100"])     # never above the annual
+                seasons.append((nm, v))
+        sw = None
+        swm = self.mf.get("swell")
+        if swm and x.get("sx") and x["sx"][idx]:
+            NT, NF = len(swm["thresholds"]), len(swm["period_floors"])
+            k1 = swm["thresholds"].index(1.0)
+            ex1 = ex1l = ms = mw = den = dw = 0.0
+            for m in range(12):
+                v = x["sx"][idx][m * NF * NT + k1]
+                if v < 0:
+                    continue
+                w = MONTH_DAYS[m]
+                den += w
+                ex1 += w * v / 10.0
+                ex1l += w * x["sx"][idx][(m * NF + NF - 1) * NT + k1] / 10.0
+                if x["sm"][idx][2 * m] >= 0:
+                    ms += w * x["sm"][idx][2 * m] / 10.0
+                if x["sm"][idx][2 * m + 1] >= 0:
+                    mw += w * x["sm"][idx][2 * m + 1] / 10.0
+                    dw += w
+            if den:
+                sw = {"over1": ex1 / den, "over1long": ex1l / den, "mean": ms / den,
+                      "wind": (mw / dw) if dw else None, "long": swm["period_floors"][-1]}
+        return {"ok": True, "rv": r, "big": big / 10.0 if big is not None else None, "when": when,
+                "years": "%d to %d" % (years[0], years[-1]), "seasons": seasons, "swell": sw}
 
     def probe_ids(self, lat, lon):
         """The tile search box of data.js TileProvider.query, verbatim."""
@@ -757,6 +941,7 @@ def compute(loc, store, assets):
                   (WINDOW_HS, WINDOW_HOURS))
 
     near = nearest_named_asset(assets, data["cell"]["lat"], data["cell"]["lon"], ASSET_MAX_KM) if assets else None
+    xe = store.extremes(best)
 
     return {
         "name": name, "lat": lat, "lon": lon, "region": region, "slug": slug,
@@ -764,7 +949,7 @@ def compute(loc, store, assets):
         "monthly": monthly, "cols": cols, "year_pct": year_pct, "head": head,
         "year_mean": day_weighted_mean(data["mean"], year["usedMonths"]),
         "rough": rough, "calm": calm, "means": data["mean"], "missing": missing,
-        "wind": wind, "windows": windows, "near": near,
+        "wind": wind, "windows": windows, "near": near, "xe": xe,
     }, None
 
 
@@ -829,6 +1014,8 @@ def lead_paragraph(r):
                         MONTH_NAMES[cm], r["means"][cm], pct_words(cp), HEADLINE_HS))
     if 4 in r["cols"] and r["year_pct"].get(4) is not None:
         parts.append("Waves above 4 m occur %s of the time." % pct_words(r["year_pct"][4]))
+    if xe_ok(r):
+        parts.append("The 100-year significant wave height is about %.1f m." % r["xe"]["rv"]["hs100"])
     if r["missing"]:
         parts.append("The source holds no wave statistics for %s at this cell, which usually means sea ice; the annual figures on this page cover the remaining months only."
                      % month_range_words(r["missing"]))
@@ -865,6 +1052,69 @@ def windows_line(r):
     s += "." if w["months"] == 12 else " (over the %d months with data)." % w["months"]
     s += " Periods do not overlap, so a 30 day month holds at most %d." % (30 * 24 // WINDOW_HOURS)
     return s
+
+
+SEASON_WORDS = {"DJF": "December to February", "MAM": "March to May",
+                "JJA": "June to August", "SON": "September to November"}
+
+
+def xe_ok(r):
+    return bool(r.get("xe") and r["xe"].get("ok"))
+
+
+def extremes_html(r):
+    x = r.get("xe")
+    if not x:
+        return ""
+    if not x["ok"]:
+        return ('<h2>Extreme waves and swell</h2>\n<p class="tm-basis">Not enough complete years at this '
+                'data point for return values (sea ice).</p>')
+    v = x["rv"]
+
+    def rng(T):
+        se = v.get("se%d" % T)
+        if se is None:
+            return "&ndash;"
+        return "%.1f to %.1f" % (max(0, v["hs%d" % T] - 1.645 * se), v["hs%d" % T] + 1.645 * se)
+    rows = []
+    if v.get("hs1") is not None:
+        rows.append("<tr><td>1 year</td><td>%.1f</td><td>&ndash;</td></tr>" % v["hs1"])
+    for T in (10, 50, 100):
+        rows.append("<tr><td>%d years</td><td>%.1f</td><td>%s</td></tr>" % (T, v["hs%d" % T], rng(T)))
+    table = ('<div class="tm-table-wrap"><table>\n<thead><tr><th>Return period</th><th>H<sub>s</sub> (m)</th>'
+             '<th>90%% range (m)</th></tr></thead>\n<tbody>\n%s\n</tbody></table></div>' % "\n".join(rows))
+    lines = []
+    if x["big"] is not None:
+        lines.append("Biggest sea state in the record (%s): %.1f m%s." % (x["years"], x["big"],
+                     (" on " + x["when"]) if x["when"] else ""))
+    bits = []
+    if v.get("tp50") is not None:
+        bits.append("peak period %.1f s" % v["tp50"])
+    if v.get("tz50") is not None:
+        bits.append("zero-crossing period %.1f s" % v["tz50"])
+    if v.get("sw50") is not None:
+        bits.append("swell %.1f m" % v["sw50"])
+    if bits:
+        lines.append("In each year's biggest seas, typically: " + ", ".join(bits) + ".")
+    lines.append("Highest single wave in a 100-year storm: about %.1f m (1.9 times H<sub>s</sub>, DNV-RP-C205 3.7.3.5)."
+                 % (1.9 * v["hs100"]))
+    ss = [(SEASON_WORDS.get(n, n), h) for n, h in x["seasons"] if h is not None]
+    if ss:
+        lines.append("100-year H<sub>s</sub> by season: " + ", ".join("%s %.1f m" % (n, h) for n, h in ss) + ".")
+    sw = x.get("swell")
+    if sw:
+        lines.append("Swell: mean %.1f m%s; swell above 1 m %s of the time, %s with a mean period of %g s or more."
+                     % (sw["mean"], (", wind sea %.1f m" % sw["wind"]) if sw["wind"] is not None else "",
+                        esc(fmt_pct(sw["over1"])), esc(fmt_pct(sw["over1long"])), sw["long"]))
+    note = ("Gumbel fit to the yearly maxima (DNV-RP-C205 3.6.2.4); the 90%% range is the sampling error of the fit. "
+            "The hindcast smooths out the peaks of tropical cyclones and the most intense storms, so values there are "
+            "likely low. Statistics for planning, not design values.")
+    if v.get("alt100") is not None and abs(v["alt100"] - v["hs100"]) > 0.15 * v["hs100"]:
+        note += (" A second method (Weibull on all sea states) gives %.1f m here; the two disagree, so treat these "
+                 "values with caution." % v["alt100"])
+    return "\n".join(["<h2>Extreme waves and swell</h2>", table] +
+                     ['<p class="tm-basis">%s</p>' % l for l in lines] +
+                     ['<p class="tm-basis">%s See <a href="../learn/100-year-wave.html">what a 100-year wave means</a>.</p>' % note])
 
 
 def basis_line(r, mf):
@@ -1014,13 +1264,21 @@ def footer_html(mf, extra_attr=None):
 
 
 def location_page(r, mf, base_url, date, cta_html, cta_url):
-    title = "Sea state at %s: wave height exceedance by month" % r["name"]
+    title = ("%s: wave height, swell and 100-year sea state" % r["name"]) if xe_ok(r) \
+        else "Sea state at %s: wave height exceedance by month" % r["name"]
     src = (mf.get("source_label") or mf.get("source") or "").replace(" + ", " and ")
     canonical = "%slocations/%s.html" % (base_url, r["slug"])
-    description = ("Monthly and annual percentage of time significant wave height exceeds %s m at %s, with mean wave height by month%s, from %s, %s. Free, from %s."
+    description = ("Metocean statistics: monthly and annual percentage of time significant wave height exceeds %s m at %s, with mean wave height by month%s, from %s, %s. Free, from %s."
                    % (" to ".join(["%g" % r["cols"][0], "%g" % r["cols"][-1]]) if r["cols"] else "2",
                       r["name"] if r["region"].lower() in r["name"].lower() else "%s (%s)" % (r["name"], r["region"]),
                       ", wind and weather windows" if (r["wind"] or r["windows"]) else "", src, mf.get("period"), COMPANY))
+    if xe_ok(r):
+        xv = r["xe"]
+        description = ("%s metocean data: 100-year significant wave height about %.1f m%s, wave height by month, "
+                       "swell and weather windows. Free, from %s."
+                       % (r["name"], xv["rv"]["hs100"],
+                          (", biggest storm %.1f m (%s)" % (xv["big"], xv["when"])) if xv.get("when") else "",
+                          COMPANY))
     loc_param = "loc=%.2f,%.2f" % (r["lat"], r["lon"])
 
     # table
@@ -1061,14 +1319,18 @@ def location_page(r, mf, base_url, date, cta_html, cta_url):
         "spatialCoverage": {"@type": "Place", "name": "%s, %s" % (r["name"], r["region"]),
                             "geo": {"@type": "GeoCoordinates", "latitude": r["lat"], "longitude": r["lon"]}},
         "temporalCoverage": temporal_coverage(mf.get("period")),
-        "isBasedOn": {"@type": "Dataset", "name": src},
+        # the source as a plain reference: typed "Dataset" with only a name,
+        # Google checked it as a dataset of its own and flagged it for no
+        # description, creator or licence (Search Console, 31 Oct 26)
+        "isBasedOn": {"@type": "CreativeWork", "name": src},
         "creator": {"@type": "Organization", "name": COMPANY, "url": cta_url},
         "license": "https://creativecommons.org/licenses/by/4.0/",
         "creditText": mf.get("attribution") or "",
         "isAccessibleForFree": True,
         "variableMeasured": [
             "Percentage of time significant wave height exceeds %g m, by calendar month" % t for t in r["cols"]
-        ] + ["Mean significant wave height by calendar month (m)"],
+        ] + ["Mean significant wave height by calendar month (m)"] + (
+            ["1, 10, 50 and 100-year significant wave height (m)", "Swell and wind sea height (m)"] if xe_ok(r) else []),
     }, {
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
@@ -1089,6 +1351,10 @@ def location_page(r, mf, base_url, date, cta_html, cta_url):
         '<p class="tm-basis">Mean significant wave height and the percentage of time the significant wave height is above each level, by calendar month. The last row combines the months weighted by their length in days.</p>',
         table,
         "\n".join(lines),
+        extremes_html(r),
+        '<p class="tm-basis">Guides: <a href="../learn/significant-wave-height.html">significant wave height</a>, '
+        '<a href="../learn/wave-period-tp-tz.html">Tp and Tz</a>, <a href="../learn/weather-windows.html">weather windows</a>. '
+        'Region: <a href="../regions/%s.html">%s</a>.</p>' % (esc(slugify(r["region"])), esc(r["region"])),
         "<h2>Data basis</h2>",
         '<p class="tm-basis">%s</p>' % esc(basis_line(r, mf)),
         '<p class="tm-basis">%s</p>' % esc(mf.get("attribution") or ""),
@@ -1106,7 +1372,7 @@ def index_page(results, mf, base_url, date, cta_html, cta_url):
     page_title = "Historical sea state by location: monthly wave statistics for %d offshore areas" % len(results)
     src = (mf.get("source_label") or mf.get("source") or "").replace(" + ", " and ")
     canonical = base_url + "locations/index.html"
-    description = ("Free historical sea state data for %d named offshore working areas worldwide: wave height exceedance by month, from %s, %s. Each page states its data point."
+    description = ("Free historical sea state and metocean data for %d named offshore working areas worldwide: wave height exceedance by month, from %s, %s. Each page states its data point."
                    % (len(results), src, mf.get("period")))
     regions = []
     for r in results:
@@ -1120,7 +1386,7 @@ def index_page(results, mf, base_url, date, cta_html, cta_url):
                 continue
             items.append('<li><a href="%s.html">%s</a><span class="tm-pct">%s above %g m over the year</span></li>'
                          % (esc(r["slug"]), esc(r["name"]), esc(fmt_pct(r["head"])), HEADLINE_HS))
-        groups.append('<h2 class="tm-region">%s</h2>\n<ul class="tm-loclist">\n%s\n</ul>' % (esc(reg), "\n".join(items)))
+        groups.append('<h2 class="tm-region"><a href="../regions/%s.html">%s</a></h2>\n<ul class="tm-loclist">\n%s\n</ul>' % (esc(slugify(reg)), esc(reg), "\n".join(items)))
     jsonld = [{
         "@context": "https://schema.org",
         "@type": "CollectionPage",
@@ -1153,11 +1419,165 @@ def index_page(results, mf, base_url, date, cta_html, cta_url):
     return page_shell(page_title, description, canonical, jsonld, body)
 
 
+def region_page(region, rs, mf, base_url, date, cta_html, cta_url):
+    slug = slugify(region)
+    phrase = REGION_PHRASE.get(region, "in " + region)
+    title = "%s wave height and sea state: %d offshore locations" % (region, len(rs))
+    canonical = "%sregions/%s.html" % (base_url, slug)
+    xs = [r for r in rs if xe_ok(r)]
+    description = ("Wave height, swell and 100-year sea state %s: %d offshore fields and passages compared, from the "
+                   "WAVERYS hindcast. Free, from %s." % (phrase, len(rs), COMPANY))
+    rows = []
+    for r in sorted(rs, key=lambda r: r["name"].lower()):
+        x = r["xe"]["rv"] if xe_ok(r) else None
+        rows.append("<tr><td><a href=\"../locations/%s.html\">%s</a></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            esc(r["slug"]), esc(r["name"]),
+            ("%.1f" % r["year_mean"]) if r["year_mean"] is not None else "&ndash;",
+            esc(fmt_pct(r["head"])), ("%.1f" % x["hs100"]) if x else "&ndash;"))
+    table = ('<div class="tm-table-wrap"><table>\n<thead><tr><th>Location</th><th>Mean H<sub>s</sub> (m)</th>'
+             '<th>%% of time above %g m</th><th>100-year H<sub>s</sub> (m)</th></tr></thead>\n<tbody>\n%s\n</tbody></table></div>'
+             % (HEADLINE_HS, "\n".join(rows)))
+    lead = "%d named offshore locations %s, with the yearly mean significant wave height, the share of the year above %g m and the 100-year significant wave height at each." % (
+        len(rs), phrase, HEADLINE_HS)
+    if xs:
+        hi = max(xs, key=lambda r: r["xe"]["rv"]["hs100"])
+        lo = min(xs, key=lambda r: r["xe"]["rv"]["hs100"])
+        if hi is not lo:
+            lead += " The 100-year value runs from %.1f m at %s to %.1f m at %s." % (
+                lo["xe"]["rv"]["hs100"], lo["name"], hi["xe"]["rv"]["hs100"], hi["name"])
+    jsonld = [{"@context": "https://schema.org", "@type": "CollectionPage", "name": title, "description": description,
+               "url": canonical, "isPartOf": {"@type": "WebSite", "name": SITE_NAME, "url": base_url}},
+              {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+                  {"@type": "ListItem", "position": 1, "name": SITE_NAME, "item": base_url},
+                  {"@type": "ListItem", "position": 2, "name": "Locations", "item": base_url + "locations/index.html"},
+                  {"@type": "ListItem", "position": 3, "name": region, "item": canonical}]}]
+    body = "\n".join([
+        header_html("../index.html", cta_url, "region_logo"),
+        '<nav class="tm-crumbs"><a href="../index.html">%s</a> &rsaquo; <a href="../locations/index.html">Locations</a> &rsaquo; %s</nav>' % (esc(SITE_NAME), esc(region)),
+        "<h1>%s</h1>" % esc(title),
+        '<p class="tm-lead">%s</p>' % esc(lead),
+        table,
+        '<p class="tm-basis">Nearest grid cell to each named position, %s. Return values are statistics from the hindcast, not design values; see <a href="../learn/100-year-wave.html">what a 100-year wave means</a>. Any other point: the <a href="../index.html">explorer</a>.</p>' % esc(mf.get("period")),
+        '<section class="tm-cta">\n%s\n</section>' % cta_tagged(cta_html, cta_url, "region_cta"),
+        footer_html(mf),
+    ])
+    return page_shell(title, description, canonical, jsonld, body)
+
+
+LEARN_SLUGS = ["significant-wave-height", "100-year-wave", "wave-period-tp-tz", "weather-windows"]
+
+
+def learn_pages(results, mf, base_url, date, cta_html, cta_url):
+    """Four short guides that answer the plain questions people search for,
+    each worked through on a real location page."""
+    ex = None
+    for slug in ("thylacine-otway", "gorgon", "forties"):
+        hit = [r for r in results if r["slug"] == slug and xe_ok(r)]
+        if hit:
+            ex = hit[0]
+            break
+    if ex is None:
+        hit = [r for r in results if xe_ok(r)]
+        ex = hit[0] if hit else (results[0] if results else None)
+    exl = '<a href="../locations/%s.html">%s</a>' % (esc(ex["slug"]), esc(ex["name"])) if ex else ""
+    exv = ex["xe"]["rv"] if (ex and xe_ok(ex)) else None
+    src = (mf.get("source_label") or mf.get("source") or "").replace(" + ", " and ")
+    pages = {}
+
+    def page(slug, title, description, paras):
+        canonical = "%slearn/%s.html" % (base_url, slug)
+        jsonld = [{"@context": "https://schema.org", "@type": "Article", "headline": title,
+                   "description": description, "url": canonical, "dateModified": date,
+                   "author": {"@type": "Organization", "name": COMPANY, "url": cta_url},
+                   "publisher": {"@type": "Organization", "name": COMPANY, "url": cta_url}},
+                  {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+                      {"@type": "ListItem", "position": 1, "name": SITE_NAME, "item": base_url},
+                      {"@type": "ListItem", "position": 2, "name": title, "item": canonical}]}]
+        others = " &middot; ".join('<a href="%s.html">%s</a>' % (o, esc(LEARN_TITLES[o])) for o in LEARN_SLUGS if o != slug)
+        body = "\n".join([
+            header_html("../index.html", cta_url, "learn_logo"),
+            '<nav class="tm-crumbs"><a href="../index.html">%s</a> &rsaquo; Guides</nav>' % esc(SITE_NAME),
+            "<h1>%s</h1>" % esc(title)] + paras + [
+            '<p class="tm-basis">Try it for any point at sea in the <a href="../index.html">explorer</a>, or browse the <a href="../locations/index.html">location pages</a>. Other guides: %s. How the numbers are made: <a href="../methodology.html">How it works</a>.</p>' % others,
+            '<section class="tm-cta">\n%s\n</section>' % cta_tagged(cta_html, cta_url, "learn_cta"),
+            footer_html(mf),
+        ])
+        pages[slug] = page_shell(title, description, "%slearn/%s.html" % (base_url, slug), jsonld, body)
+
+    def P(t, cls="tm-basis"):
+        return '<p class="%s">%s</p>' % (cls, t)
+
+    # 1. significant wave height
+    ex1 = ""
+    if ex:
+        ex1 = (" At %s, for example, H<sub>s</sub> is above %g m %s of the year, and the mean is %.1f m."
+               % (exl, HEADLINE_HS, esc(pct_words(ex["head"])), ex["year_mean"] or 0))
+    page("significant-wave-height", LEARN_TITLES["significant-wave-height"],
+         "What significant wave height (Hs) means, how it relates to the biggest single waves, and how to read how often it is exceeded.",
+         [P("Significant wave height, H<sub>s</sub>, is the standard single number for how rough the sea is. It is close to the average height of the highest third of the waves, which is roughly what an experienced observer reports by eye. Wave models work it out from the energy in the wave spectrum (4 times the square root of the spectrum's area).", "tm-lead"),
+          "<h2>Individual waves are bigger</h2>",
+          P("H<sub>s</sub> describes a sea state, typically a 3 hour period. The waves within it vary a lot: the single highest wave in a storm is commonly taken as about 1.9 times H<sub>s</sub> (DNV-RP-C205 3.7.3.5 uses this for the 100-year wave). A sea state of H<sub>s</sub> 4 m can carry individual waves of 7 m or more."),
+          "<h2>Reading how often it is exceeded</h2>",
+          P("The explorer counts every 3 hourly record in the months you pick and tells you the share with H<sub>s</sub> at or above your limit." + ex1 + " A limit that is exceeded 10% of the time is exceeded about 3 days a month, though those days come in runs, not spread evenly; the weather window figures account for that."),
+          P("Data: %s, %s." % (esc(src), esc(mf.get("period"))))])
+    # 2. 100-year wave
+    ex2 = ""
+    if exv:
+        ex2 = (" At %s the 100-year significant wave height is about %.1f m (90%% range %.1f to %.1f m), the 10-year about %.1f m%s."
+               % (exl, exv["hs100"], max(0, exv["hs100"] - 1.645 * exv["se100"]), exv["hs100"] + 1.645 * exv["se100"], exv["hs10"],
+                  (", and the biggest sea state in the record was %.1f m on %s" % (ex["xe"]["big"], ex["xe"]["when"])) if ex["xe"].get("when") else ""))
+    page("100-year-wave", LEARN_TITLES["100-year-wave"],
+         "What a 100-year wave height means, the chance it is exceeded during a project, and how return values are worked out from yearly maxima.",
+         [P("The 100-year significant wave height is the value exceeded on average once in 100 years: a 1% chance in any one year. It is not a wave that comes once a century on schedule.", "tm-lead"),
+          "<h2>The chance it happens during your project</h2>",
+          P("Over a 25 year design life the chance of meeting the 100-year sea state at least once is about 22% (1 minus 0.99 to the power 25). Over 100 years it is about 63%. Over a 3 month campaign it is well under 1%, which is why short operations use seasonal statistics instead."),
+          "<h2>How we work it out</h2>",
+          P("We take the biggest 3 hourly H<sub>s</sub> in each year of the hindcast and fit a Gumbel distribution by the method of moments, following DNV-RP-C205 (3.6.2.4 and 3.7.1.3). Years run summer to summer so each storm season sits in one year (3.6.2.5), and at least 20 complete years are needed. The 90% range shows the sampling uncertainty of the fit. As a check we also fit a Weibull distribution to every sea state and say so where the two disagree by more than 15%." + ex2),
+          "<h2>Where it falls short</h2>",
+          P("A hindcast smooths out the sharp peak of a tropical cyclone and of the most intense storms, so in those areas these values tend to be low. They are statistics for planning and tendering. Design needs the project's own metocean criteria, prepared and checked by a specialist.")])
+    # 3. Tp and Tz
+    ex3 = ""
+    if exv and exv.get("tp50") is not None and exv.get("tz50") is not None:
+        ex3 = " In the biggest seas at %s the peak period is typically %.1f s and the zero-crossing period %.1f s." % (exl, exv["tp50"], exv["tz50"])
+    page("wave-period-tp-tz", LEARN_TITLES["wave-period-tp-tz"],
+         "The difference between peak period Tp and zero-crossing period Tz, how they relate, and why swell period matters offshore.",
+         [P("Wave period is the time between successive waves. Two measures are common. The peak period, T<sub>p</sub>, is the period carrying the most energy. The zero-crossing period, T<sub>z</sub>, is the average time between the sea surface crossing its mean level upwards.", "tm-lead"),
+          "<h2>How they relate</h2>",
+          P("T<sub>z</sub> is shorter than T<sub>p</sub>. For a typical wind sea spectrum (JONSWAP) the ratio T<sub>z</sub>/T<sub>p</sub> is about 0.71 for a broad spectrum (peak factor 1) and about 0.78 for the standard peak factor of 3.3 (DNV-RP-C205 3.5.5.4). Where swell and wind sea are both present the ratio can be well outside that range, so the explorer takes T<sub>z</sub> straight from the model's spectrum rather than estimating it from T<sub>p</sub>." + ex3),
+          "<h2>Why period matters</h2>",
+          P("Vessels, moored units and lifted loads respond strongly at particular periods. Long period swell of 12 seconds or more can move a vessel far more than its height suggests, which is why the explorer shows swell separately from the local wind sea, with its own period classes.")])
+    # 4. weather windows
+    ex4 = ""
+    if ex and ex.get("windows"):
+        w = ex["windows"]
+        ex4 = " At %s a typical month fits about %d separate %d hour periods with H<sub>s</sub> below %g m." % (exl, js_round(w["avg"]), WINDOW_HOURS, WINDOW_HS)
+    page("weather-windows", LEARN_TITLES["weather-windows"],
+         "What a weather window is, how many working periods below a wave height limit fit in a month, and how to use that for planning offshore work.",
+         [P("A weather window is a stretch of time long enough to do a job with the sea below your limit. What matters is not just how often the sea is calm but how long the calm lasts: ten separate 2 hour lulls are no use for a 24 hour lift.", "tm-lead"),
+          "<h2>How the explorer counts them</h2>",
+          P("Pick a duration and a wave height limit. The explorer counts how many separate, non-overlapping periods of that length fit into a typical month with H<sub>s</sub> below the limit, so a three day calm counts as three 24 hour periods." + ex4 + " It is estimated from how long calm spells usually last; checked against exact counts it was usually within one period a month."),
+          "<h2>Using it</h2>",
+          P("Compare months to pick a season, then allow for transit, standby and the time it takes the sea to settle after a storm. Fine for planning; contract weather criteria and operability studies need a dedicated analysis.")])
+    return pages
+
+
+LEARN_TITLES = {
+    "significant-wave-height": "What is significant wave height (Hs)?",
+    "100-year-wave": "What is a 100-year wave height?",
+    "wave-period-tp-tz": "Wave period: peak period Tp and zero-crossing period Tz",
+    "weather-windows": "Weather windows for offshore work",
+}
+
+
 def sitemap_xml(results, base_url, date):
     urls = [(base_url, None), (base_url + "methodology.html", None),
             (base_url + "locations/index.html", date)]
     for r in results:
         urls.append(("%slocations/%s.html" % (base_url, r["slug"]), date))
+    for reg in sorted(set(slugify(r["region"]) for r in results)):
+        urls.append(("%sregions/%s.html" % (base_url, reg), date))
+    for slug in LEARN_SLUGS:
+        urls.append(("%slearn/%s.html" % (base_url, slug), date))
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<!-- %s -->" % GENERATED_NOTE,
              '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for loc, lastmod in urls:
@@ -1182,6 +1602,7 @@ def llms_txt(results, mf, base_url, date, cta_url):
         "## What it answers",
         "",
         "- How often significant wave height exceeds a given level at a location, by calendar month and across the year",
+        "- 1, 10, 50 and 100-year significant wave height with the biggest storm on record, seasonal 100-year values, swell and wind sea, zero-crossing period",
         "- Mean wave height by month, typical peak period and direction, wind speed (mean and top decile), extreme sea states, weather windows (separate working periods per month below a wave height limit), water depth, nearby oil and gas assets, tropical cyclone exposure",
         "- A one page PDF summary and a shareable link for every result",
         "",
@@ -1195,6 +1616,8 @@ def llms_txt(results, mf, base_url, date, cta_url):
         "",
         "- [Locations index](%slocations/index.html): %d named offshore working areas, each with a monthly table, the headline numbers in words and the data basis" % (base_url, len(results)),
         "- [How it works](%smethodology.html): where the numbers come from, how to read them, and the data credits" % base_url,
+        "- Region pages under %sregions/: each region's locations compared, with the 100-year significant wave height" % base_url,
+        "- Guides: [significant wave height](%slearn/significant-wave-height.html), [100-year wave](%slearn/100-year-wave.html), [Tp and Tz](%slearn/wave-period-tp-tz.html), [weather windows](%slearn/weather-windows.html)" % (base_url, base_url, base_url, base_url),
         "- [Explorer](%s): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result" % base_url,
         "",
         "## Not for scraping",
@@ -1320,6 +1743,9 @@ def main():
         for tid, t in b["tiles"].items():
             with io.open(os.path.join(tdir, tid + ".json"), "w", encoding="utf-8") as fh:
                 fh.write(json.dumps(t))
+        for xid, t in (b.get("xtiles") or {}).items():
+            with io.open(os.path.join(tdir, xid + ".json"), "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(t))
         print("bundle: %s, %d tiles, unpacked to %s" % (args.bundle, len(mf["tiles"]), tdir))
         store = TileStore(tdir)
     else:
@@ -1332,16 +1758,19 @@ def main():
     print("coast check: %s" % ("on (%d rings)" % len(coast) if coast else "off (no coastline.js next to the site)"))
     cta_html, cta_url = read_cta(out_dir)
 
-    slugs = [l[4] for l in LOCATIONS]
+    locs = all_locations(store, assets)
+    print("locations: %d curated, %d passages, %d from the field register" % (
+        len(LOCATIONS), len(PASSAGES), len(locs) - len(LOCATIONS) - len(PASSAGES)))
+    slugs = [l[4] for l in locs]
     dups = sorted(set(s for s in slugs if slugs.count(s) > 1))
     if dups:
         raise SystemExit("duplicate slugs: %s" % ", ".join(dups))
-    for l in LOCATIONS:
+    for l in locs:
         if not re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", l[4]):
             raise SystemExit("bad slug %r" % l[4])
 
     results, skipped = [], []
-    for loc in LOCATIONS:
+    for loc in locs:
         name, lat, lon, region, slug = loc
         r, why = compute(loc, store, assets)
         if r is None:
@@ -1371,12 +1800,24 @@ def main():
     path = os.path.join(loc_dir, "index.html")
     write(path, index_page(results, store.mf, base_url, args.date, cta_html, cta_url))
     written.append(path)
+    regions = []
+    for r in results:
+        if r["region"] not in regions:
+            regions.append(r["region"])
+    for reg in regions:
+        path = os.path.join(out_dir, "regions", slugify(reg) + ".html")
+        write(path, region_page(reg, [r for r in results if r["region"] == reg], store.mf, base_url, args.date, cta_html, cta_url))
+        written.append(path)
+    for slug, text in learn_pages(results, store.mf, base_url, args.date, cta_html, cta_url).items():
+        path = os.path.join(out_dir, "learn", slug + ".html")
+        write(path, text)
+        written.append(path)
     write(os.path.join(out_dir, "sitemap.xml"), sitemap_xml(results, base_url, args.date))
     write(os.path.join(out_dir, "llms.txt"), llms_txt(results, store.mf, base_url, args.date, cta_url))
     write(os.path.join(out_dir, "robots.txt"), robots_txt(base_url))
 
     # stale pages from a location that was renamed or dropped
-    keep = set(os.path.basename(p) for p in written)
+    keep = set(os.path.basename(p) for p in written if os.sep + "locations" + os.sep in p)
     for fn in sorted(os.listdir(loc_dir)):
         if fn.endswith(".html") and fn not in keep:
             print("NOTE: %s is not in the current list and was left in place; delete it by hand if the location was dropped" % os.path.join(loc_dir, fn))

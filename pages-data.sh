@@ -42,13 +42,13 @@ store = BP.TileStore(data)
 keep = {}
 # the page builder reads ONE cell per location, the nearest with data
 # (TileStore.nearest_cell), so that cell is all the bundle carries
-for loc in BP.LOCATIONS:
+for loc in BP.all_locations(store, BP.load_assets(data)):
     best = store.nearest_cell(loc[1], loc[2])
     if best is None:
         continue
     tid = [k for k, v in store.tiles.items() if v is best["tile"]][0]
     keep.setdefault(tid, set()).add(best["idx"])
-tiles = {}
+tiles, xtiles = {}, {}
 for tid, cells in keep.items():
     if not cells:
         continue
@@ -59,9 +59,16 @@ for tid, cells in keep.items():
     for k, v in t.items():
         tt[k] = [v[i] for i in idx] if isinstance(v, list) and len(v) == n else v
     tiles[tid] = tt
+    # the extremes sidecar (return values, swell, Tz), same cells
+    xp = os.path.join(data, "x" + tid[1:] + ".json")
+    if os.path.exists(xp):
+        x = json.load(open(xp))
+        if len(x.get("lat", [])) == n:
+            xtiles["x" + tid[1:]] = dict((k, [v[i] for i in idx] if isinstance(v, list) and len(v) == n else v)
+                                         for k, v in x.items())
 mf = dict(store.mf)
 mf.pop("tiles", None)
-body = json.dumps({"manifest": mf, "tiles": tiles})
+body = json.dumps({"manifest": mf, "tiles": tiles, "xtiles": xtiles})
 tmp = out + ".tmp"
 with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     z.writestr("seastate_location_data.json", body)
@@ -69,7 +76,7 @@ with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         z.write(os.path.join(data, "assets.json"), "assets.json")
 os.chmod(tmp, 0o644)
 os.replace(tmp, out)
-print("%d locations, %d tiles, %d cells, %.1f MB" % (len(BP.LOCATIONS), len(tiles),
+print("%d locations, %d tiles (%d with extremes), %d cells, %.1f MB" % (len(BP.all_locations(store, BP.load_assets(data))), len(tiles), len(xtiles),
       sum(len(t["lat"]) for t in tiles.values()), os.path.getsize(out) / 1e6))
 PY
 ok=$?

@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Free historical sea state data for any offshore location: wave exceedance by month, wind, weather windows and extremes, with a one page PDF.">
 <meta name="twitter:image" content="https://seastate.thrustm.com/og-image.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314304a'/%3E%3Cpath d='M4 20c3-4 6-4 8 0s6 4 8 0 6-4 8 0' stroke='%239ec5f4' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=4bc812f01d">
+<link rel="stylesheet" href="style.css?v=de19c834cd">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -202,6 +202,8 @@
           </figure>
           <figure class="tm-fig">
             <figcaption id="tm-tp-title">Typical peak period, by month</figcaption>
+            <div class="tm-win-controls" id="tm-tp-ctl" hidden><select id="tm-tp-kind" aria-label="Wave period shown">
+              <option value="tp">Peak period Tp</option><option value="tz">Zero-crossing period Tz</option></select></div>
             <div id="tm-tp" class="tm-chart"></div>
             <p class="tm-fig-note" id="tm-tp-note" hidden>Multiple humps usually mean
             multiple seas, for example local wind waves and longer swell.</p>
@@ -260,6 +262,29 @@
             more, from best tracks since 1980. Many operations start securing and
             demobilising once a cyclone is inside 1,000 nm, well before the local sea picks
             up, so that downtime comes on top of the wave statistics above.</p>
+          </figure>
+        </div>
+
+        <div class="tm-charts tm-charts-c tm-solo" id="tm-rowx" hidden>
+          <figure class="tm-fig" id="tm-rv-fig">
+            <figcaption>Extreme waves</figcaption>
+            <div id="tm-rv-sum" class="tm-win-sum"></div>
+            <div class="tm-enso-wrap"><table class="tm-enso-table tm-plain" id="tm-rv-table"></table></div>
+            <div id="tm-rv-chart" class="tm-chart"></div>
+            <p class="tm-fig-note" id="tm-rv-note"></p>
+          </figure>
+        </div>
+
+        <div class="tm-charts tm-charts-c" id="tm-rows" hidden>
+          <figure class="tm-fig">
+            <figcaption id="tm-sw-title">Swell and wind sea</figcaption>
+            <div id="tm-sw-sum" class="tm-win-sum"></div>
+            <div class="tm-enso-wrap"><table class="tm-enso-table tm-plain" id="tm-sw-table"></table></div>
+            <p class="tm-fig-note">Primary swell from the WAVERYS partition. Period is the swell's mean period (Tm01).</p>
+          </figure>
+          <figure class="tm-fig">
+            <figcaption id="tm-sw-rose-title">Where swell comes from</figcaption>
+            <div id="tm-sw-rose" class="tm-chart tm-chart-rose"></div>
           </figure>
         </div>
 
@@ -342,16 +367,16 @@
 
 <div class="tm-tip" id="tm-tip" hidden></div>
 
-<script>window.TM_BUILD="4bc812f01d";</script>
+<script>window.TM_BUILD="de19c834cd";</script>
 <script>window.TM_CONFIG_OVERRIDES=Object.assign(window.TM_CONFIG_OVERRIDES||{},{dataBase:"https://seastate-data.thrustm.com/data/"});</script>
-<script src="hit.js?v=4bc812f01d"></script>
-<script src="coastline.js?v=4bc812f01d"></script>
-<script src="borders.js?v=4bc812f01d"></script>
-<script src="places.js?v=4bc812f01d"></script>
-<script src="data.js?v=4bc812f01d"></script>
-<script src="map.js?v=4bc812f01d"></script>
-<script src="chart.js?v=4bc812f01d"></script>
-<script src="report.js?v=4bc812f01d"></script>
-<script src="app.js?v=4bc812f01d"></script>
+<script src="hit.js?v=de19c834cd"></script>
+<script src="coastline.js?v=de19c834cd"></script>
+<script src="borders.js?v=de19c834cd"></script>
+<script src="places.js?v=de19c834cd"></script>
+<script src="data.js?v=de19c834cd"></script>
+<script src="map.js?v=de19c834cd"></script>
+<script src="chart.js?v=de19c834cd"></script>
+<script src="report.js?v=de19c834cd"></script>
+<script src="app.js?v=de19c834cd"></script>
 </body>
 </html>

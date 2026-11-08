@@ -226,6 +226,7 @@ html, body {
 .tm-enso-table thead th { font-weight: 600; color: var(--ink-2); border-bottom-color: var(--baseline); }
 .tm-enso-table td.tm-enso-hi { font-weight: 600; }
 .tm-enso-table tbody tr:last-child td { border-bottom: none; color: var(--muted); font-size: 12px; }
+.tm-enso-table.tm-plain tbody tr:last-child td { color: inherit; font-size: inherit; }
 
 
 .tm-goto {

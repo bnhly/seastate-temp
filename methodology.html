@@ -166,7 +166,18 @@
   <p>The big number at the top is how often significant wave height (Hs) was at or above your limit, counting every 3 hourly record in the months you picked. Hs is roughly the average of the highest third of the waves. Individual waves can be close to double it.</p>
 
   <h3>Extremes</h3>
-  <p>When we say "1 sea state in 100 is above 6 m", we mean 1 in every 100 records was higher than 6 m. That is not a 100 year wave. Design extremes need an extreme value study.</p>
+  <p>When we say "1 sea state in 100 is above 6 m", we mean 1 in every 100 records was higher than 6 m. That is not a 100 year wave.</p>
+
+  <h3>Return periods (1 to 100 years)</h3>
+  <p>We take the biggest 3 hourly Hs in each year of the WAVERYS record (1980 to 2023) and fit a Gumbel distribution by the method of moments (DNV-RP-C205, Sep 2019 amended Sep 2021, 3.6.2.4). The T-year value is the one exceeded with probability 1/T in a year (3.7.1.3). Years run July to June north of the equator and January to December south of it, so each storm season sits in one year (3.6.2.5). A cell needs 20 complete years; under sea ice it gets none. The 90% range is the sampling error of the fit (Kite 1977), not model error. The 1 year value is the Hs exceeded once in 2,922 sea states (3.7.1.2).</p>
+  <p>As a check we also fit a 3 parameter Weibull to every sea state (3.6.2.1). Where the two differ by more than 15%, usually cyclone, monsoon or ice areas, the page says so. The highest single wave in a 100 year storm is taken as 1.9 times the 100 year Hs (3.7.3.5). Seasonal values use each season's own yearly maxima and are capped at the annual value.</p>
+  <p>The hindcast smooths out the peaks of tropical cyclones and the most intense storms, so these values tend to be low there. They are statistics for planning, not design values: design needs the project's own metocean criteria, checked independently.</p>
+
+  <h3>Swell and wind sea</h3>
+  <p>WAVERYS splits the sea into wind sea and swell partitions. We use the primary swell (its height, mean period Tm01 and direction) and the wind sea height. Swell periods are grouped as under 8 s, 8 to 12 s and 12 s or more.</p>
+
+  <h3>Zero-crossing period</h3>
+  <p>Tz is the WAVERYS mean period from the second spectral moment (Tm02), not estimated from Tp.</p>
 
   <h3>Weather windows</h3>
   <p>This counts how many separate working periods of your chosen length fit into a typical month with Hs below your limit. A three day calm counts as three 24 hour periods. We estimate it from how long calm spells usually last rather than counting them one by one, and checked against exact counts it was usually within one period a month. Fine for planning, not for contract weather criteria.</p>

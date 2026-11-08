@@ -572,9 +572,12 @@ class Extremes(object):
             del fl
             if ex.shape[-1] < nthr:
                 ex = np.concatenate([ex, np.zeros(ex.shape[:-1] + (nthr - ex.shape[-1],), np.int32)], axis=-1)
-            pm = np.floor(ex * (1000.0 / np.maximum(tot, 1))[..., None, None].astype(np.float32) + 0.5)
+            # exact integer rounding, floor(1000 k / n + 0.5): k * (1000 / n)
+            # in floating point can land either side of an exact half (seen
+            # on ice-edge cells with few sea states in the month)
+            n9 = np.maximum(tot, 1)[..., None, None]
+            pm = ((2000 * ex.astype(np.int64) + n9) // (2 * n9)).astype(np.int16)
             del ex
-            pm = pm.astype(np.int16)
             pm[~ok] = -1
             pml[m] = pm
             del pm

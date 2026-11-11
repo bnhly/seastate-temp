@@ -22,7 +22,7 @@
 - [Locations index](https://seastate.thrustm.com/locations/index.html): 224 named offshore working areas, each with a monthly table, the headline numbers in words and the data basis
 - [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
 - Region pages under https://seastate.thrustm.com/regions/: each region's locations compared, with the 100-year significant wave height
-- Guides: [significant wave height](https://seastate.thrustm.com/learn/significant-wave-height.html), [100-year wave](https://seastate.thrustm.com/learn/100-year-wave.html), [Tp and Tz](https://seastate.thrustm.com/learn/wave-period-tp-tz.html), [weather windows](https://seastate.thrustm.com/learn/weather-windows.html)
+- Guides: [significant wave height](https://seastate.thrustm.com/learn/significant-wave-height.html), [100-year wave](https://seastate.thrustm.com/learn/100-year-wave.html), [Tp and Tz](https://seastate.thrustm.com/learn/wave-period-tp-tz.html), [weather windows](https://seastate.thrustm.com/learn/weather-windows.html), [wave climate and metocean data](https://seastate.thrustm.com/learn/wave-climate-metocean-data.html)
 - [Explorer](https://seastate.thrustm.com/): any other point at sea. The URL fragment #loc=<lat>,<lon> reproduces a result
 
 ## Not for scraping

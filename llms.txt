@@ -13,7 +13,7 @@
 
 ## The data behind it
 
-- WAVERYS wave reanalysis (Copernicus Marine) and ERA5 wind, 1980-2023, 3 hourly, 0.2 degree grid. Values are the nearest grid cell to the chosen point, never interpolated between cells; every result states the data point, the grid and its distance from the chosen point, and the PDF adds the sample count.
+- WAVERYS wave reanalysis (Copernicus Marine) and ERA5 wind, 1980-2023, 3 hourly, 0.2 degree grid. Values are the nearest grid cell to the chosen point, never interpolated between cells. Every result states the data point, the grid and its distance from the chosen point, and the PDF adds the sample count.
 - Attribution: Generated using E.U. Copernicus Marine Service Information: WAVERYS global wave reanalysis [1980-2023], 3 hourly significant wave height, peak period and direction. Wind statistics from the ERA5 reanalysis (Copernicus C3S) on its 0.5 degree grid (wind, direction rose, diurnal cycle and ENSO split 1980-2024). Neither the European Commission nor ECMWF nor Mercator Ocean is responsible for any use of this information.
 - These are long term climatological statistics and not a forecast. They are likely to underestimate extremes, especially close to coastlines, in sheltered or shallow water and in tropical cyclone conditions. The data is free for everyone to use, but it is not warranted by Thrust Maritime: use it at your own risk.
 
@@ -23,11 +23,11 @@
 - [How it works](https://seastate.thrustm.com/methodology.html): where the numbers come from, how to read them, and the data credits
 - Region pages under https://seastate.thrustm.com/regions/: each region's locations compared, with the 100-year significant wave height
 - Guides: [significant wave height](https://seastate.thrustm.com/learn/significant-wave-height.html), [100-year wave](https://seastate.thrustm.com/learn/100-year-wave.html), [Tp and Tz](https://seastate.thrustm.com/learn/wave-period-tp-tz.html), [weather windows](https://seastate.thrustm.com/learn/weather-windows.html)
-- [Explorer](https://seastate.thrustm.com/): any other point at sea; the URL fragment #loc=<lat>,<lon> reproduces a result
+- [Explorer](https://seastate.thrustm.com/): any other point at sea. The URL fragment #loc=<lat>,<lon> reproduces a result
 
 ## Not for scraping
 
-- The tile files under /data/ are bulk inputs for the interactive map, excluded from crawling in robots.txt, and not for reuse. Automated bulk extraction is not permitted; the underlying open datasets are available from the original providers credited above.
+- The tile files under /data/ are bulk inputs for the interactive map, excluded from crawling in robots.txt, and not for reuse. Automated bulk extraction is not permitted. The underlying open datasets are available from the original providers credited above.
 - Link to the location pages and the How it works page instead.
 
 ## Contact
